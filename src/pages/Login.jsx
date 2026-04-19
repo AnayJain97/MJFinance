@@ -11,7 +11,7 @@ export default function Login() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>RPR Business</h1>
+        <h1>MJ Finance</h1>
         <p>Sign in to manage your business</p>
         <button className="btn btn-google" onClick={signInWithGoogle}>
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">

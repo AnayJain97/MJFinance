@@ -17,7 +17,7 @@ export default function Layout() {
             ☰
           </button>
           <div className="topbar-spacer" />
-          <span className="user-name">{user?.displayName || 'RPR Business'}</span>
+          <span className="user-name">{user?.displayName || 'MJ Finance'}</span>
           <button className="btn btn-sm btn-outline" onClick={signOut} style={{ marginLeft: '0.5rem' }}>
             Sign out
           </button>
