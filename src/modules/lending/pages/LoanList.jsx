@@ -161,11 +161,11 @@ export default function LoanList() {
                       {loan.clientName}
                     </Link>
                   </td>
-                  <td className="text-right" style={{ color: '#2ec4b6' }}>
+                  <td className="text-right" style={{ color: '#28a745' }}>
                     {formatCurrency(s.interestTillFYEnd)}
                     <Tooltip text={s.formulaText} />
                   </td>
-                  <td className="text-right" style={{ color: '#4361ee', fontWeight: 600 }}>
+                  <td className="text-right" style={{ color: '#28a745', fontWeight: 600 }}>
                     {formatCurrency(s.totalDue)}
                   </td>
                   <td className="text-right">{formatPercent(loan.monthlyInterestRate)}</td>

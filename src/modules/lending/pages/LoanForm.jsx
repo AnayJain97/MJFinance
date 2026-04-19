@@ -17,6 +17,7 @@ export default function LoanForm() {
     principalAmount: '',
     monthlyInterestRate: '',
     loanDate: new Date().toISOString().slice(0, 10),
+    endDate: '',
     notes: '',
   });
   const [submitting, setSubmitting] = useState(false);
@@ -31,6 +32,7 @@ export default function LoanForm() {
         principalAmount: String(existing.principalAmount || ''),
         monthlyInterestRate: String(existing.monthlyInterestRate || ''),
         loanDate: toInputDate(existing.loanDate),
+        endDate: existing.endDate ? toInputDate(existing.endDate) : '',
         notes: existing.notes || '',
       });
     }
@@ -52,6 +54,10 @@ export default function LoanForm() {
       setToast({ message: 'Please enter valid amounts', type: 'error' });
       return;
     }
+    if (form.endDate && form.endDate <= form.loanDate) {
+      setToast({ message: 'End date must be after loan date', type: 'error' });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -61,6 +67,7 @@ export default function LoanForm() {
         principalAmount: principal,
         monthlyInterestRate: rate,
         loanDate: fromInputDate(form.loanDate),
+        endDate: form.endDate ? fromInputDate(form.endDate) : null,
         notes: form.notes.trim(),
         status: 'active',
       };
@@ -155,6 +162,16 @@ export default function LoanForm() {
                 value={form.loanDate}
                 onChange={handleChange}
                 required
+              />
+            </div>
+            <div className="form-group">
+              <label>End Date</label>
+              <input
+                type="date"
+                name="endDate"
+                value={form.endDate}
+                onChange={handleChange}
+                min={form.loanDate}
               />
             </div>
             <div className="form-group">

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useCollection } from '../../../hooks/useFirestore';
 import { getClientFinalized } from '../utils/lendingCalcs';
 import { exportToExcel } from '../../../services/exportService';
@@ -122,7 +123,7 @@ export default function FinalizedView() {
       <LendingTabs />
 
       <div className="page-header">
-        <h1>Finalized View — FY {getCurrentFYLabel()}</h1>
+        <h1>Finalized View</h1>
         <div className="page-actions">
           {filtered.length > 0 && (
             <button className="btn btn-export" onClick={handleExport}>📥 Export Excel</button>
@@ -134,17 +135,16 @@ export default function FinalizedView() {
       <div className="summary-grid">
         <div className="summary-card">
           <div className="label">Total Lent + Interest</div>
-          <div className="value text-primary">{formatCurrency(grandTotals.totalLendingDue)}</div>
+          <div className="value" style={{ color: '#28a745' }}>{formatCurrency(grandTotals.totalLendingDue)}</div>
         </div>
         <div className="summary-card">
           <div className="label">Total Borrowed + Interest</div>
-          <div className="value text-primary">{formatCurrency(grandTotals.totalBorrowingCredit)}</div>
+          <div className="value" style={{ color: '#dc3545' }}>{formatCurrency(grandTotals.totalBorrowingCredit)}</div>
         </div>
         <div className="summary-card">
           <div className="label">Net Receivable</div>
-          <div className={`value ${grandTotals.netAmount >= 0 ? 'text-danger' : 'text-success'}`}>
+          <div className="value" style={{ color: grandTotals.netAmount >= 0 ? '#28a745' : '#dc3545' }}>
             {formatCurrency(Math.abs(grandTotals.netAmount))}
-            {grandTotals.netAmount < 0 ? ' (you owe)' : ' (owed to you)'}
           </div>
         </div>
       </div>
@@ -182,14 +182,18 @@ export default function FinalizedView() {
             <tbody>
               {sorted.map(c => (
                 <tr key={c.clientName}>
-                  <td style={{ fontWeight: 500 }}>{c.clientName}</td>
+                  <td style={{ fontWeight: 500 }}>
+                    <Link to={`/lending/client/${encodeURIComponent(c.clientName)}`} style={{ color: '#4361ee', fontWeight: 500 }}>
+                      {c.clientName}
+                    </Link>
+                  </td>
                   <td className="text-right">{formatCurrency(c.totalLent)}</td>
-                  <td className="text-right" style={{ color: '#2ec4b6' }}>{formatCurrency(c.totalLendingInterest)}</td>
-                  <td className="text-right" style={{ color: '#4361ee', fontWeight: 600 }}>{formatCurrency(c.totalLendingDue)}</td>
+                  <td className="text-right">{formatCurrency(c.totalLendingInterest)}</td>
+                  <td className="text-right">{formatCurrency(c.totalLendingDue)}</td>
                   <td className="text-right">{formatCurrency(c.totalBorrowed)}</td>
-                  <td className="text-right" style={{ color: '#2ec4b6' }}>{formatCurrency(c.totalBorrowingInterest)}</td>
-                  <td className="text-right" style={{ color: '#4361ee', fontWeight: 600 }}>{formatCurrency(c.totalBorrowingCredit)}</td>
-                  <td className={`text-right ${c.netAmount >= 0 ? 'text-danger' : 'text-success'}`} style={{ fontWeight: 600 }}>
+                  <td className="text-right">{formatCurrency(c.totalBorrowingInterest)}</td>
+                  <td className="text-right">{formatCurrency(c.totalBorrowingCredit)}</td>
+                  <td className="text-right" style={{ fontWeight: 600, color: c.netAmount >= 0 ? '#28a745' : '#dc3545' }}>
                     {c.netAmount >= 0 ? '+' : '−'}{formatCurrency(Math.abs(c.netAmount))}
                   </td>
                 </tr>
@@ -198,13 +202,13 @@ export default function FinalizedView() {
             <tfoot>
               <tr style={{ fontWeight: 700, borderTop: '2px solid #333' }}>
                 <td>TOTAL</td>
-                <td className="text-right">{formatCurrency(grandTotals.totalLent)}</td>
-                <td className="text-right" style={{ color: '#2ec4b6' }}>{formatCurrency(grandTotals.totalLendingInterest)}</td>
-                <td className="text-right" style={{ color: '#4361ee' }}>{formatCurrency(grandTotals.totalLendingDue)}</td>
-                <td className="text-right">{formatCurrency(grandTotals.totalBorrowed)}</td>
-                <td className="text-right" style={{ color: '#2ec4b6' }}>{formatCurrency(grandTotals.totalBorrowingInterest)}</td>
-                <td className="text-right" style={{ color: '#4361ee' }}>{formatCurrency(grandTotals.totalBorrowingCredit)}</td>
-                <td className={`text-right ${grandTotals.netAmount >= 0 ? 'text-danger' : 'text-success'}`}>
+                <td className="text-right" style={{ color: '#28a745' }}>{formatCurrency(grandTotals.totalLent)}</td>
+                <td className="text-right" style={{ color: '#28a745' }}>{formatCurrency(grandTotals.totalLendingInterest)}</td>
+                <td className="text-right" style={{ color: '#28a745' }}>{formatCurrency(grandTotals.totalLendingDue)}</td>
+                <td className="text-right" style={{ color: '#dc3545' }}>{formatCurrency(grandTotals.totalBorrowed)}</td>
+                <td className="text-right" style={{ color: '#dc3545' }}>{formatCurrency(grandTotals.totalBorrowingInterest)}</td>
+                <td className="text-right" style={{ color: '#dc3545' }}>{formatCurrency(grandTotals.totalBorrowingCredit)}</td>
+                <td className="text-right" style={{ color: grandTotals.netAmount >= 0 ? '#28a745' : '#dc3545' }}>
                   {grandTotals.netAmount >= 0 ? '+' : '−'}{formatCurrency(Math.abs(grandTotals.netAmount))}
                 </td>
               </tr>

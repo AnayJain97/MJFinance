@@ -27,6 +27,7 @@ export default function BorrowingForm() {
     amount: '',
     monthlyInterestRate: '',
     borrowDate: new Date().toISOString().slice(0, 10),
+    endDate: '',
     notes: '',
   });
   const [submitting, setSubmitting] = useState(false);
@@ -59,6 +60,10 @@ export default function BorrowingForm() {
       setToast({ message: 'Please enter valid amounts', type: 'error' });
       return;
     }
+    if (form.endDate && form.endDate <= form.borrowDate) {
+      setToast({ message: 'End date must be after borrowing date', type: 'error' });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -67,6 +72,7 @@ export default function BorrowingForm() {
         amount,
         monthlyInterestRate: rate,
         borrowDate: fromInputDate(form.borrowDate),
+        endDate: form.endDate ? fromInputDate(form.endDate) : null,
         notes: form.notes.trim(),
         status: 'active',
       });
@@ -144,6 +150,16 @@ export default function BorrowingForm() {
                 value={form.borrowDate}
                 onChange={handleChange}
                 required
+              />
+            </div>
+            <div className="form-group">
+              <label>End Date</label>
+              <input
+                type="date"
+                name="endDate"
+                value={form.endDate}
+                onChange={handleChange}
+                min={form.borrowDate}
               />
             </div>
             <div className="form-group">

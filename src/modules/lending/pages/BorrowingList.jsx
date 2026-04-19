@@ -121,11 +121,11 @@ export default function BorrowingList() {
         </div>
         <div className="summary-card">
           <div className="label">Interest till FY End</div>
-          <div className="value text-success">{formatCurrency(totals.totalInterest)}</div>
+          <div className="value" style={{ color: '#dc3545' }}>{formatCurrency(totals.totalInterest)}</div>
         </div>
         <div className="summary-card">
           <div className="label">Total Credit (Amount + Interest)</div>
-          <div className="value text-primary">{formatCurrency(totals.totalCredit)}</div>
+          <div className="value" style={{ color: '#dc3545' }}>{formatCurrency(totals.totalCredit)}</div>
         </div>
       </div>
 
@@ -175,12 +175,16 @@ export default function BorrowingList() {
                 <tr key={b.id}>
                   <td>{formatDate(b.borrowDate)}</td>
                   <td className="text-right">{formatCurrency(b.amount)}</td>
-                  <td>{b.clientName}</td>
-                  <td className="text-right" style={{ color: '#2ec4b6' }}>
+                  <td>
+                    <Link to={`/lending/borrowings/${b.id}`} style={{ color: '#4361ee', fontWeight: 500 }}>
+                      {b.clientName}
+                    </Link>
+                  </td>
+                  <td className="text-right" style={{ color: '#dc3545' }}>
                     {formatCurrency(s.interestTillFYEnd)}
                     <Tooltip text={s.formulaText} />
                   </td>
-                  <td className="text-right" style={{ color: '#4361ee', fontWeight: 600 }}>
+                  <td className="text-right" style={{ color: '#dc3545', fontWeight: 600 }}>
                     {formatCurrency(s.totalCredit)}
                   </td>
                   <td className="text-right">{formatPercent(b.monthlyInterestRate)}</td>
