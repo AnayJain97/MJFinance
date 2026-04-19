@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc,
-  query, where, orderBy, serverTimestamp
+  query, orderBy, serverTimestamp
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { db, auth } from '../services/firebase';
@@ -33,7 +33,6 @@ export function useCollection(collectionPath) {
 
       const q = query(
         collection(db, collectionPath),
-        where('uid', '==', user.uid),
         orderBy('createdAt', 'desc')
       );
       unsubFirestore = onSnapshot(q,
@@ -111,7 +110,6 @@ export function useDocument(docPath) {
 export async function addDocument(collectionPath, data) {
   const docRef = await addDoc(collection(db, collectionPath), {
     ...data,
-    uid: auth.currentUser.uid,
     createdAt: serverTimestamp(),
   });
   return { id: docRef.id };

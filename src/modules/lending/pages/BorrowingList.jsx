@@ -10,17 +10,62 @@ import Tooltip from '../../../components/Tooltip';
 
 export default function BorrowingList() {
   const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('active');
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+
   const { data: allBorrowings, loading } = useCollection('borrowings');
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return allBorrowings;
-    const s = search.toLowerCase();
-    return allBorrowings.filter(b => b.clientName.toLowerCase().includes(s));
-  }, [allBorrowings, search]);
+    let items = allBorrowings;
+    if (filter !== 'all') {
+      items = items.filter(b => (b.status || 'active') === filter);
+    }
+    if (search.trim()) {
+      const s = search.toLowerCase();
+      items = items.filter(b => b.clientName.toLowerCase().includes(s));
+    }
+    return items;
+  }, [allBorrowings, filter, search]);
 
-  const summaries = useMemo(() => {
-    return filtered.map(getBorrowingSummary);
-  }, [filtered]);
+  const summaries = useMemo(() => filtered.map(getBorrowingSummary), [filtered]);
+
+  const sortedData = useMemo(() => {
+    const combined = filtered.map((b, idx) => ({ borrowing: b, summary: summaries[idx] }));
+    if (!sortCol) return combined;
+    combined.sort((a, b) => {
+      let va, vb;
+      switch (sortCol) {
+        case 'date': va = new Date(a.borrowing.borrowDate?.toDate?.() || a.borrowing.borrowDate); vb = new Date(b.borrowing.borrowDate?.toDate?.() || b.borrowing.borrowDate); break;
+        case 'amount': va = a.borrowing.amount; vb = b.borrowing.amount; break;
+        case 'client': va = a.borrowing.clientName.toLowerCase(); vb = b.borrowing.clientName.toLowerCase(); break;
+        case 'interest': va = a.summary.interestTillFYEnd; vb = b.summary.interestTillFYEnd; break;
+        case 'total': va = a.summary.totalCredit; vb = b.summary.totalCredit; break;
+        case 'rate': va = a.borrowing.monthlyInterestRate; vb = b.borrowing.monthlyInterestRate; break;
+        default: return 0;
+      }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return combined;
+  }, [filtered, summaries, sortCol, sortDir]);
+
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
+      setSortDir('asc');
+    }
+  };
+
+  const SortTh = ({ col, children, className }) => (
+    <th className={`sortable ${className || ''}`} onClick={() => handleSort(col)}>
+      {children}
+      {sortCol === col && <span className="sort-arrow">{sortDir === 'asc' ? ' ▲' : ' ▼'}</span>}
+    </th>
+  );
 
   const totals = useMemo(() => ({
     count: filtered.length,
@@ -30,16 +75,13 @@ export default function BorrowingList() {
   }), [filtered, summaries]);
 
   const handleExport = () => {
-    const rows = filtered.map((b, idx) => {
-      const s = summaries[idx];
-      return {
-        date: formatDate(b.borrowDate),
-        amount: b.amount,
-        clientName: b.clientName,
-        interestTillFY: s.interestTillFYEnd,
-        totalCredit: s.totalCredit,
-      };
-    });
+    const rows = sortedData.map(({ borrowing: b, summary: s }) => ({
+      date: formatDate(b.borrowDate),
+      amount: b.amount,
+      clientName: b.clientName,
+      interestTillFY: s.interestTillFYEnd,
+      totalCredit: s.totalCredit,
+    }));
 
     exportToExcel(rows, [
       { header: 'Date', key: 'date', width: 12 },
@@ -70,7 +112,7 @@ export default function BorrowingList() {
 
       <div className="summary-grid">
         <div className="summary-card">
-          <div className="label">Total Entries</div>
+          <div className="label">Active Entries</div>
           <div className="value text-primary">{totals.count}</div>
         </div>
         <div className="summary-card">
@@ -95,9 +137,20 @@ export default function BorrowingList() {
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+        <div className="filter-tabs">
+          {['active', 'closed', 'all'].map(f => (
+            <button
+              key={f}
+              className={`filter-tab ${filter === f ? 'active' : ''}`}
+              onClick={() => setFilter(f)}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {sortedData.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">🔄</div>
           <p>No borrowings found. Record money received back from clients here.</p>
@@ -108,34 +161,36 @@ export default function BorrowingList() {
           <table>
             <thead>
               <tr>
-                <th>Date</th>
-                <th className="text-right">Amount</th>
-                <th>Client</th>
-                <th className="text-right">
-                  Int. till FY End
-                  <Tooltip text="Interest on amount received, from date to FY end" />
-                </th>
-                <th className="text-right">Total Credit</th>
-                <th className="text-right">Rate/Mo</th>
+                <SortTh col="date">Date</SortTh>
+                <SortTh col="amount" className="text-right">Amount</SortTh>
+                <SortTh col="client">Client</SortTh>
+                <SortTh col="interest" className="text-right">Int. till FY End</SortTh>
+                <SortTh col="total" className="text-right">Total Credit</SortTh>
+                <SortTh col="rate" className="text-right">Rate/Mo</SortTh>
+                {filter === 'all' && <th>Status</th>}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((b, idx) => {
-                const s = summaries[idx];
-                return (
-                  <tr key={b.id}>
-                    <td>{formatDate(b.borrowDate)}</td>
-                    <td className="text-right">{formatCurrency(b.amount)}</td>
-                    <td>{b.clientName}</td>
-                    <td className="text-right">
-                      {formatCurrency(s.interestTillFYEnd)}
-                      <Tooltip text={s.formulaText} />
+              {sortedData.map(({ borrowing: b, summary: s }) => (
+                <tr key={b.id}>
+                  <td>{formatDate(b.borrowDate)}</td>
+                  <td className="text-right">{formatCurrency(b.amount)}</td>
+                  <td>{b.clientName}</td>
+                  <td className="text-right" style={{ color: '#2ec4b6' }}>
+                    {formatCurrency(s.interestTillFYEnd)}
+                    <Tooltip text={s.formulaText} />
+                  </td>
+                  <td className="text-right" style={{ color: '#4361ee', fontWeight: 600 }}>
+                    {formatCurrency(s.totalCredit)}
+                  </td>
+                  <td className="text-right">{formatPercent(b.monthlyInterestRate)}</td>
+                  {filter === 'all' && (
+                    <td>
+                      <span className={`badge badge-${b.status || 'active'}`}>{b.status || 'active'}</span>
                     </td>
-                    <td className="text-right">{formatCurrency(s.totalCredit)}</td>
-                    <td className="text-right">{formatPercent(b.monthlyInterestRate)}</td>
-                  </tr>
-                );
-              })}
+                  )}
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

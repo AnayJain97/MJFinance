@@ -128,7 +128,7 @@ export default function LoanDetail() {
         <div className="summary-grid">
           <div className="summary-card">
             <div className="label">Principal Amount</div>
-            <div className="value text-danger">{formatCurrency(summary.principal)}</div>
+            <div className="value">{formatCurrency(summary.principal)}</div>
           </div>
           <div className="summary-card">
             <div className="label">Monthly Interest</div>
@@ -144,7 +144,7 @@ export default function LoanDetail() {
           </div>
           <div className="summary-card">
             <div className="label">Total Due (Principal + Interest)</div>
-            <div className="value text-danger">{formatCurrency(summary.totalDue)}</div>
+            <div className="value text-primary">{formatCurrency(summary.totalDue)}</div>
           </div>
         </div>
       )}

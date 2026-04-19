@@ -68,6 +68,7 @@ export default function BorrowingForm() {
         monthlyInterestRate: rate,
         borrowDate: fromInputDate(form.borrowDate),
         notes: form.notes.trim(),
+        status: 'active',
       });
       setToast({ message: 'Borrowing recorded successfully', type: 'success' });
       setTimeout(() => navigate('/lending/borrowings'), 500);

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useCollection } from '../../../hooks/useFirestore';
 import { getClientFinalized } from '../utils/lendingCalcs';
 import { exportToExcel } from '../../../services/exportService';
@@ -7,6 +7,10 @@ import { getCurrentFYLabel } from '../../../utils/dateUtils';
 import LendingTabs from '../components/LendingTabs';
 
 export default function FinalizedView() {
+  const [search, setSearch] = useState('');
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState('asc');
+
   const { data: loans, loading: loadingLoans } = useCollection('loans');
   const { data: borrowings, loading: loadingBorrowings } = useCollection('borrowings');
 
@@ -14,22 +18,67 @@ export default function FinalizedView() {
     if (!loans.length && !borrowings.length) return [];
     return getClientFinalized(
       loans.filter(l => l.status === 'active'),
-      borrowings
+      borrowings.filter(b => (b.status || 'active') === 'active')
     );
   }, [loans, borrowings]);
 
+  const filtered = useMemo(() => {
+    if (!search.trim()) return clientSummaries;
+    const s = search.toLowerCase();
+    return clientSummaries.filter(c => c.clientName.toLowerCase().includes(s));
+  }, [clientSummaries, search]);
+
+  const sorted = useMemo(() => {
+    const items = [...filtered];
+    if (!sortCol) return items;
+    items.sort((a, b) => {
+      let va, vb;
+      switch (sortCol) {
+        case 'client': va = a.clientName.toLowerCase(); vb = b.clientName.toLowerCase(); break;
+        case 'lent': va = a.totalLent; vb = b.totalLent; break;
+        case 'lendInt': va = a.totalLendingInterest; vb = b.totalLendingInterest; break;
+        case 'lendDue': va = a.totalLendingDue; vb = b.totalLendingDue; break;
+        case 'borrowed': va = a.totalBorrowed; vb = b.totalBorrowed; break;
+        case 'borInt': va = a.totalBorrowingInterest; vb = b.totalBorrowingInterest; break;
+        case 'credit': va = a.totalBorrowingCredit; vb = b.totalBorrowingCredit; break;
+        case 'net': va = a.netAmount; vb = b.netAmount; break;
+        default: return 0;
+      }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  }, [filtered, sortCol, sortDir]);
+
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
+      setSortDir('asc');
+    }
+  };
+
+  const SortTh = ({ col, children, className }) => (
+    <th className={`sortable ${className || ''}`} onClick={() => handleSort(col)}>
+      {children}
+      {sortCol === col && <span className="sort-arrow">{sortDir === 'asc' ? ' ▲' : ' ▼'}</span>}
+    </th>
+  );
+
   const grandTotals = useMemo(() => ({
-    totalLent: clientSummaries.reduce((s, c) => s + c.totalLent, 0),
-    totalLendingInterest: clientSummaries.reduce((s, c) => s + c.totalLendingInterest, 0),
-    totalLendingDue: clientSummaries.reduce((s, c) => s + c.totalLendingDue, 0),
-    totalBorrowed: clientSummaries.reduce((s, c) => s + c.totalBorrowed, 0),
-    totalBorrowingInterest: clientSummaries.reduce((s, c) => s + c.totalBorrowingInterest, 0),
-    totalBorrowingCredit: clientSummaries.reduce((s, c) => s + c.totalBorrowingCredit, 0),
-    netAmount: clientSummaries.reduce((s, c) => s + c.netAmount, 0),
-  }), [clientSummaries]);
+    totalLent: filtered.reduce((s, c) => s + c.totalLent, 0),
+    totalLendingInterest: filtered.reduce((s, c) => s + c.totalLendingInterest, 0),
+    totalLendingDue: filtered.reduce((s, c) => s + c.totalLendingDue, 0),
+    totalBorrowed: filtered.reduce((s, c) => s + c.totalBorrowed, 0),
+    totalBorrowingInterest: filtered.reduce((s, c) => s + c.totalBorrowingInterest, 0),
+    totalBorrowingCredit: filtered.reduce((s, c) => s + c.totalBorrowingCredit, 0),
+    netAmount: filtered.reduce((s, c) => s + c.netAmount, 0),
+  }), [filtered]);
 
   const handleExport = () => {
-    const rows = clientSummaries.map(c => ({
+    const rows = sorted.map(c => ({
       clientName: c.clientName,
       totalLent: c.totalLent,
       lendingInterest: c.totalLendingInterest,
@@ -75,7 +124,7 @@ export default function FinalizedView() {
       <div className="page-header">
         <h1>Finalized View — FY {getCurrentFYLabel()}</h1>
         <div className="page-actions">
-          {clientSummaries.length > 0 && (
+          {filtered.length > 0 && (
             <button className="btn btn-export" onClick={handleExport}>📥 Export Excel</button>
           )}
         </div>
@@ -85,11 +134,11 @@ export default function FinalizedView() {
       <div className="summary-grid">
         <div className="summary-card">
           <div className="label">Total Lent + Interest</div>
-          <div className="value text-danger">{formatCurrency(grandTotals.totalLendingDue)}</div>
+          <div className="value text-primary">{formatCurrency(grandTotals.totalLendingDue)}</div>
         </div>
         <div className="summary-card">
           <div className="label">Total Borrowed + Interest</div>
-          <div className="value text-success">{formatCurrency(grandTotals.totalBorrowingCredit)}</div>
+          <div className="value text-primary">{formatCurrency(grandTotals.totalBorrowingCredit)}</div>
         </div>
         <div className="summary-card">
           <div className="label">Net Receivable</div>
@@ -100,7 +149,17 @@ export default function FinalizedView() {
         </div>
       </div>
 
-      {clientSummaries.length === 0 ? (
+      <div className="toolbar">
+        <input
+          type="text"
+          className="search-input"
+          placeholder="Search by client name..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
+      {sorted.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📊</div>
           <p>No data yet. Add lendings and borrowings to see the finalized view.</p>
@@ -110,26 +169,26 @@ export default function FinalizedView() {
           <table>
             <thead>
               <tr>
-                <th>Client</th>
-                <th className="text-right">Lent</th>
-                <th className="text-right">Lending Int.</th>
-                <th className="text-right">Lending Due</th>
-                <th className="text-right">Borrowed</th>
-                <th className="text-right">Borrowing Int.</th>
-                <th className="text-right">Credit</th>
-                <th className="text-right">Net</th>
+                <SortTh col="client">Client</SortTh>
+                <SortTh col="lent" className="text-right">Lent</SortTh>
+                <SortTh col="lendInt" className="text-right">Lending Int.</SortTh>
+                <SortTh col="lendDue" className="text-right">Lending Due</SortTh>
+                <SortTh col="borrowed" className="text-right">Borrowed</SortTh>
+                <SortTh col="borInt" className="text-right">Borrowing Int.</SortTh>
+                <SortTh col="credit" className="text-right">Credit</SortTh>
+                <SortTh col="net" className="text-right">Net</SortTh>
               </tr>
             </thead>
             <tbody>
-              {clientSummaries.map(c => (
+              {sorted.map(c => (
                 <tr key={c.clientName}>
                   <td style={{ fontWeight: 500 }}>{c.clientName}</td>
                   <td className="text-right">{formatCurrency(c.totalLent)}</td>
-                  <td className="text-right">{formatCurrency(c.totalLendingInterest)}</td>
-                  <td className="text-right">{formatCurrency(c.totalLendingDue)}</td>
+                  <td className="text-right" style={{ color: '#2ec4b6' }}>{formatCurrency(c.totalLendingInterest)}</td>
+                  <td className="text-right" style={{ color: '#4361ee', fontWeight: 600 }}>{formatCurrency(c.totalLendingDue)}</td>
                   <td className="text-right">{formatCurrency(c.totalBorrowed)}</td>
-                  <td className="text-right">{formatCurrency(c.totalBorrowingInterest)}</td>
-                  <td className="text-right">{formatCurrency(c.totalBorrowingCredit)}</td>
+                  <td className="text-right" style={{ color: '#2ec4b6' }}>{formatCurrency(c.totalBorrowingInterest)}</td>
+                  <td className="text-right" style={{ color: '#4361ee', fontWeight: 600 }}>{formatCurrency(c.totalBorrowingCredit)}</td>
                   <td className={`text-right ${c.netAmount >= 0 ? 'text-danger' : 'text-success'}`} style={{ fontWeight: 600 }}>
                     {c.netAmount >= 0 ? '+' : '−'}{formatCurrency(Math.abs(c.netAmount))}
                   </td>
@@ -140,11 +199,11 @@ export default function FinalizedView() {
               <tr style={{ fontWeight: 700, borderTop: '2px solid #333' }}>
                 <td>TOTAL</td>
                 <td className="text-right">{formatCurrency(grandTotals.totalLent)}</td>
-                <td className="text-right">{formatCurrency(grandTotals.totalLendingInterest)}</td>
-                <td className="text-right">{formatCurrency(grandTotals.totalLendingDue)}</td>
+                <td className="text-right" style={{ color: '#2ec4b6' }}>{formatCurrency(grandTotals.totalLendingInterest)}</td>
+                <td className="text-right" style={{ color: '#4361ee' }}>{formatCurrency(grandTotals.totalLendingDue)}</td>
                 <td className="text-right">{formatCurrency(grandTotals.totalBorrowed)}</td>
-                <td className="text-right">{formatCurrency(grandTotals.totalBorrowingInterest)}</td>
-                <td className="text-right">{formatCurrency(grandTotals.totalBorrowingCredit)}</td>
+                <td className="text-right" style={{ color: '#2ec4b6' }}>{formatCurrency(grandTotals.totalBorrowingInterest)}</td>
+                <td className="text-right" style={{ color: '#4361ee' }}>{formatCurrency(grandTotals.totalBorrowingCredit)}</td>
                 <td className={`text-right ${grandTotals.netAmount >= 0 ? 'text-danger' : 'text-success'}`}>
                   {grandTotals.netAmount >= 0 ? '+' : '−'}{formatCurrency(Math.abs(grandTotals.netAmount))}
                 </td>

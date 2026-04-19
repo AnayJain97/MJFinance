@@ -16,7 +16,7 @@ export default function Sidebar({ onClose }) {
   return (
     <nav className="sidebar">
       <div className="sidebar-header">
-        <h2>RPR Business</h2>
+        <h2>MJ Finance</h2>
         <button className="sidebar-close" onClick={onClose} aria-label="Close menu">✕</button>
       </div>
       <ul className="sidebar-nav">

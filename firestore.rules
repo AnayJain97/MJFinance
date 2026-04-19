@@ -2,21 +2,9 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Deny all by default
+    // Any authenticated user can read/write all data
     match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Loans: users can only access their own loans (by uid field)
-    match /loans/{loanId} {
-      allow read, update, delete: if request.auth != null && resource.data.uid == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
-    }
-
-    // Borrowings: users can only access their own borrowings (by uid field)
-    match /borrowings/{borrowingId} {
-      allow read, update, delete: if request.auth != null && resource.data.uid == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow read, write: if request.auth != null;
     }
   }
 }
