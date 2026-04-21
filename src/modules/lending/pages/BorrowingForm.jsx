@@ -135,6 +135,7 @@ export default function BorrowingForm() {
               inputs[idx + 1].focus();
             } else if (idx === inputs.length - 1) {
               e.preventDefault();
+              e.currentTarget.querySelector('button[type="submit"]')?.focus();
             }
           } else if (e.key === 'Enter' && e.ctrlKey) {
             e.preventDefault();
@@ -173,16 +174,6 @@ export default function BorrowingForm() {
               />
             </div>
             <div className="form-group">
-              <label>Borrowing End Date</label>
-              <input
-                type="date"
-                name="endDate"
-                value={form.endDate}
-                onChange={handleChange}
-                min={form.borrowDate}
-              />
-            </div>
-            <div className="form-group">
               <label>Borrowing Start Date *</label>
               <input
                 type="date"
@@ -190,6 +181,16 @@ export default function BorrowingForm() {
                 value={form.borrowDate}
                 onChange={handleChange}
                 required
+              />
+            </div>
+            <div className="form-group">
+              <label>Borrowing End Date</label>
+              <input
+                type="date"
+                name="endDate"
+                value={form.endDate}
+                onChange={handleChange}
+                min={form.borrowDate}
               />
             </div>
             <div className="form-group">

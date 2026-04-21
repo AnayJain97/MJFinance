@@ -110,6 +110,7 @@ export default function LoanForm() {
               inputs[idx + 1].focus();
             } else if (idx === inputs.length - 1) {
               e.preventDefault();
+              e.currentTarget.querySelector('button[type="submit"]')?.focus();
             }
           } else if (e.key === 'Enter' && e.ctrlKey) {
             e.preventDefault();
@@ -142,16 +143,6 @@ export default function LoanForm() {
               />
             </div>
             <div className="form-group">
-              <label>Loan End Date</label>
-              <input
-                type="date"
-                name="endDate"
-                value={form.endDate}
-                onChange={handleChange}
-                min={form.loanDate}
-              />
-            </div>
-            <div className="form-group">
               <label>Loan Start Date *</label>
               <input
                 type="date"
@@ -159,6 +150,16 @@ export default function LoanForm() {
                 value={form.loanDate}
                 onChange={handleChange}
                 required
+              />
+            </div>
+            <div className="form-group">
+              <label>Loan End Date</label>
+              <input
+                type="date"
+                name="endDate"
+                value={form.endDate}
+                onChange={handleChange}
+                min={form.loanDate}
               />
             </div>
             <div className="form-group">
