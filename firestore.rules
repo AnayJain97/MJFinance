@@ -2,9 +2,25 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Any authenticated user can read/write all data
+    // Users can read their own doc; can self-create with empty orgs only
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.orgs == {};
+      allow update, delete: if false; // Only admin/console can modify roles
+    }
+
+    // Org-scoped data
+    match /orgs/{orgId}/{collection}/{docId} {
+      allow read: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgs[orgId] in ['read', 'write'];
+      allow write: if request.auth != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgs[orgId] == 'write';
+    }
+
+    // Deny everything else
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

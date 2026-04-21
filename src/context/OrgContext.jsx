@@ -1,4 +1,5 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useState, useMemo, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
 
 const ORGANIZATIONS = [
   { id: 'PB', name: 'PB', color: '#6d4c9e' },
@@ -10,9 +11,24 @@ const ORGANIZATIONS = [
 const OrgContext = createContext(null);
 
 export function OrgProvider({ children }) {
+  const { userRoles } = useAuth();
+
+  const accessibleOrgs = useMemo(() => {
+    if (!userRoles) return [];
+    return ORGANIZATIONS.filter(o => userRoles[o.id] === 'read' || userRoles[o.id] === 'write');
+  }, [userRoles]);
+
   const [selectedOrg, setSelectedOrgState] = useState(() => {
     return localStorage.getItem('selectedOrg') || 'PB';
   });
+
+  useEffect(() => {
+    if (accessibleOrgs.length > 0 && !accessibleOrgs.find(o => o.id === selectedOrg)) {
+      const first = accessibleOrgs[0].id;
+      setSelectedOrgState(first);
+      localStorage.setItem('selectedOrg', first);
+    }
+  }, [accessibleOrgs, selectedOrg]);
 
   const setSelectedOrg = (orgId) => {
     setSelectedOrgState(orgId);
@@ -21,8 +37,15 @@ export function OrgProvider({ children }) {
 
   const orgInfo = ORGANIZATIONS.find(o => o.id === selectedOrg) || ORGANIZATIONS[0];
 
+  const currentOrgRole = useMemo(() => {
+    if (!userRoles) return 'none';
+    return userRoles[selectedOrg] || 'none';
+  }, [userRoles, selectedOrg]);
+
+  const canWrite = currentOrgRole === 'write';
+
   return (
-    <OrgContext.Provider value={{ selectedOrg, setSelectedOrg, organizations: ORGANIZATIONS, orgInfo }}>
+    <OrgContext.Provider value={{ selectedOrg, setSelectedOrg, organizations: accessibleOrgs, allOrganizations: ORGANIZATIONS, orgInfo, currentOrgRole, canWrite }}>
       {children}
     </OrgContext.Provider>
   );

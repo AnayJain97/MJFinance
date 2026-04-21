@@ -15,7 +15,7 @@ import { useOrg, getOrgCollection } from '../../../context/OrgContext';
  */
 export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
   const isLending = type === 'lending';
-  const { selectedOrg } = useOrg();
+  const { selectedOrg, canWrite } = useOrg();
   const collectionName = getOrgCollection(selectedOrg, isLending ? 'loans' : 'borrowings');
 
   const [showDefaults, setShowDefaults] = useState(false);
@@ -147,7 +147,7 @@ export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
     }
   };
 
-  if (!open) {
+  if (!canWrite || !open) {
     return null;
   }
 

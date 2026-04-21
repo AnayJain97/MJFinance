@@ -9,7 +9,9 @@ export default function LoanForm() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
-  const { selectedOrg } = useOrg();
+  const { selectedOrg, canWrite } = useOrg();
+
+  useEffect(() => { if (!canWrite) navigate('/money-lending/lending', { replace: true }); }, [canWrite, navigate]);
 
   const { data: existing, loading: loadingDoc } = useDocument(isEdit ? `${getOrgCollection(selectedOrg, 'loans')}/${id}` : null);
   const { data: allLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));

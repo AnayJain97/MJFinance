@@ -11,7 +11,7 @@ export default function BorrowingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
-  const { selectedOrg } = useOrg();
+  const { selectedOrg, canWrite } = useOrg();
 
   const { data: borrowing, loading } = useDocument(`${getOrgCollection(selectedOrg, 'borrowings')}/${id}`);
 
@@ -65,12 +65,12 @@ export default function BorrowingDetail() {
           <h1>{borrowing.clientName}</h1>
         </div>
         <div className="page-actions">
-          <Link to={`/money-lending/borrowing/${id}/edit`} className="btn btn-outline">✏️ Edit</Link>
-          {status === 'active' ? (
+          {canWrite && <Link to={`/money-lending/borrowing/${id}/edit`} className="btn btn-outline">✏️ Edit</Link>}
+          {canWrite && (status === 'active' ? (
             <button className="btn btn-danger" onClick={handleClose}>Close Borrowing</button>
           ) : (
             <button className="btn btn-success" onClick={handleReopen}>Reopen Borrowing</button>
-          )}
+          ))}
         </div>
       </div>
 

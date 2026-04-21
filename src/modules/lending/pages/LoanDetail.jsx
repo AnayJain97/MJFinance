@@ -11,7 +11,7 @@ export default function LoanDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
-  const { selectedOrg } = useOrg();
+  const { selectedOrg, canWrite } = useOrg();
 
   const { data: loan, loading: loadingLoan } = useDocument(`${getOrgCollection(selectedOrg, 'loans')}/${id}`);
 
@@ -63,12 +63,12 @@ export default function LoanDetail() {
           <h1>{loan.clientName}</h1>
         </div>
         <div className="page-actions">
-          <Link to={`/money-lending/lending/${id}/edit`} className="btn btn-outline">✏️ Edit</Link>
-          {loan.status === 'active' ? (
+          {canWrite && <Link to={`/money-lending/lending/${id}/edit`} className="btn btn-outline">✏️ Edit</Link>}
+          {canWrite && (loan.status === 'active' ? (
             <button className="btn btn-danger" onClick={handleCloseLoan}>Close Loan</button>
           ) : (
             <button className="btn btn-success" onClick={handleReopenLoan}>Reopen Loan</button>
-          )}
+          ))}
         </div>
       </div>
 

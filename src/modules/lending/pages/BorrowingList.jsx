@@ -19,7 +19,7 @@ export default function BorrowingList() {
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
-  const { selectedOrg } = useOrg();
+  const { selectedOrg, canWrite } = useOrg();
 
   const { data: allBorrowings, loading } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
   const { data: allLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
@@ -145,13 +145,15 @@ export default function BorrowingList() {
       <div className="page-header">
         <h1>Borrowings (Money Received Back)</h1>
         <div className="page-actions">
-          <button className="btn btn-primary" onClick={() => setQuickEntryOpen(prev => !prev)}>
-            {quickEntryOpen ? '✕ Close' : '+ New Borrowing'}
-          </button>
+          {canWrite && (
+            <button className="btn btn-primary" onClick={() => setQuickEntryOpen(prev => !prev)}>
+              {quickEntryOpen ? '✕ Close' : '+ New Borrowing'}
+            </button>
+          )}
           {filtered.length > 0 && (
             <button className="btn btn-export" onClick={handleExport}>📥 Export Excel</button>
           )}
-          {filter === 'closed' && filtered.length > 0 && (
+          {canWrite && filter === 'closed' && filtered.length > 0 && (
             <button className="btn btn-danger" onClick={handleDeleteAll}>🗑️ Delete All Closed</button>
           )}
         </div>
@@ -224,14 +226,16 @@ export default function BorrowingList() {
                 <tr key={b.id}>
                   {filter === 'closed' && (
                     <td>
-                      <button
-                        className="btn-icon-delete"
-                        title="Delete"
-                        onClick={() => handleDelete(b.id, b.clientName)}
-                        disabled={deleting === b.id}
-                      >
-                        {deleting === b.id ? '...' : '🗑️'}
-                      </button>
+                      {canWrite && (
+                        <button
+                          className="btn-icon-delete"
+                          title="Delete"
+                          onClick={() => handleDelete(b.id, b.clientName)}
+                          disabled={deleting === b.id}
+                        >
+                          {deleting === b.id ? '...' : '🗑️'}
+                        </button>
+                      )}
                     </td>
                   )}
                   <td>{formatDate(b.borrowDate)}</td>

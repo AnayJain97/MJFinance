@@ -15,6 +15,16 @@ export default function Layout() {
     navigate('/money-lending/lending', { replace: true });
   };
 
+  if (organizations.length === 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', padding: '2rem', textAlign: 'center' }}>
+        <h1>No Access</h1>
+        <p style={{ color: '#666', marginTop: '0.5rem' }}>You don't have access to any organization. Please contact an admin.</p>
+        <button className="btn btn-outline" onClick={signOut} style={{ marginTop: '1rem' }}>Sign out</button>
+      </div>
+    );
+  }
+
   return (
     <div className={`app-layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
       {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}

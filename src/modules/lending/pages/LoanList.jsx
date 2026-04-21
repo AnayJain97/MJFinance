@@ -20,7 +20,7 @@ export default function LoanList() {
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
-  const { selectedOrg } = useOrg();
+  const { selectedOrg, canWrite } = useOrg();
 
   const { data: allLoans, loading } = useCollection(getOrgCollection(selectedOrg, 'loans'));
 
@@ -140,13 +140,15 @@ export default function LoanList() {
       <div className="page-header">
         <h1>Lendings (Money Given Out)</h1>
         <div className="page-actions">
-          <button className="btn btn-primary" onClick={() => setQuickEntryOpen(prev => !prev)}>
-            {quickEntryOpen ? '✕ Close' : '+ New Loan'}
-          </button>
+          {canWrite && (
+            <button className="btn btn-primary" onClick={() => setQuickEntryOpen(prev => !prev)}>
+              {quickEntryOpen ? '✕ Close' : '+ New Loan'}
+            </button>
+          )}
           {filteredLoans.length > 0 && (
             <button className="btn btn-export" onClick={handleExport}>📥 Export Excel</button>
           )}
-          {filter === 'closed' && filteredLoans.length > 0 && (
+          {canWrite && filter === 'closed' && filteredLoans.length > 0 && (
             <button className="btn btn-danger" onClick={handleDeleteAll}>🗑️ Delete All Closed</button>
           )}
         </div>
@@ -204,14 +206,16 @@ export default function LoanList() {
                 <tr key={loan.id}>
                   {filter === 'closed' && (
                     <td>
-                      <button
-                        className="btn-icon-delete"
-                        title="Delete"
-                        onClick={() => handleDelete(loan.id, loan.clientName)}
-                        disabled={deleting === loan.id}
-                      >
-                        {deleting === loan.id ? '...' : '🗑️'}
-                      </button>
+                      {canWrite && (
+                        <button
+                          className="btn-icon-delete"
+                          title="Delete"
+                          onClick={() => handleDelete(loan.id, loan.clientName)}
+                          disabled={deleting === loan.id}
+                        >
+                          {deleting === loan.id ? '...' : '🗑️'}
+                        </button>
+                      )}
                     </td>
                   )}
                   <td>{formatDate(loan.loanDate)}</td>
