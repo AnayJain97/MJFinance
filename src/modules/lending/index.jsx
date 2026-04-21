@@ -12,9 +12,7 @@ import ClientDetail from './pages/ClientDetail';
 const lendingRoutes = (
   <>
     <Route path="money-lending/lending" element={<LoanList />} />
-    <Route path="money-lending/lending/new" element={<LoanForm />} />
     <Route path="money-lending/borrowing" element={<BorrowingList />} />
-    <Route path="money-lending/borrowing/new" element={<BorrowingForm />} />
     <Route path="money-lending/borrowing/:id" element={<BorrowingDetail />} />
     <Route path="money-lending/borrowing/:id/edit" element={<BorrowingForm />} />
     <Route path="money-lending/finalized" element={<FinalizedView />} />

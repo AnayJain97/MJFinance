@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { useDocument, addDocument, updateDocument } from '../../../hooks/useFirestore';
+import { useCollection, useDocument, addDocument, updateDocument } from '../../../hooks/useFirestore';
 import { toInputDate, fromInputDate, getFYEndDate } from '../../../utils/dateUtils';
 import Toast from '../../../components/Toast';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
@@ -12,6 +12,13 @@ export default function LoanForm() {
   const { selectedOrg } = useOrg();
 
   const { data: existing, loading: loadingDoc } = useDocument(isEdit ? `${getOrgCollection(selectedOrg, 'loans')}/${id}` : null);
+  const { data: allLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
+
+  const clientNames = useMemo(() => {
+    const names = new Set();
+    allLoans.forEach(l => names.add(l.clientName));
+    return [...names];
+  }, [allLoans]);
 
   const [form, setForm] = useState({
     clientName: '',
@@ -39,7 +46,14 @@ export default function LoanForm() {
   }, [isEdit, existing]);
 
   const handleChange = (e) => {
-    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    setForm(prev => {
+      const next = { ...prev, [name]: value };
+      if (name === 'loanDate' && value) {
+        next.endDate = toInputDate(getFYEndDate(new Date(value)));
+      }
+      return next;
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -128,8 +142,12 @@ export default function LoanForm() {
                 value={form.clientName}
                 onChange={handleChange}
                 placeholder="Enter client name"
+                list="loan-client-suggestions"
                 required
               />
+              <datalist id="loan-client-suggestions">
+                {clientNames.map(n => <option key={n} value={n} />)}
+              </datalist>
             </div>
             <div className="form-group">
               <label>Principal Amount (₹) *</label>

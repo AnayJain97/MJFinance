@@ -64,6 +64,9 @@ export default function BorrowingForm() {
           next.monthlyInterestRate = String(clientRates[key].rate);
         }
       }
+      if (name === 'borrowDate' && value) {
+        next.endDate = toInputDate(getFYEndDate(new Date(value)));
+      }
       return next;
     });
   };

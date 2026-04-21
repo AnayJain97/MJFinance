@@ -18,6 +18,7 @@ export default function BorrowingList() {
   const [sortDir, setSortDir] = useState('asc');
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const { selectedOrg } = useOrg();
 
   const { data: allBorrowings, loading } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
@@ -144,7 +145,9 @@ export default function BorrowingList() {
       <div className="page-header">
         <h1>Borrowings (Money Received Back)</h1>
         <div className="page-actions">
-          <Link to="/money-lending/borrowing/new" className="btn btn-primary">+ New Borrowing</Link>
+          <button className="btn btn-primary" onClick={() => setQuickEntryOpen(prev => !prev)}>
+            {quickEntryOpen ? '✕ Close' : '+ New Borrowing'}
+          </button>
           {filtered.length > 0 && (
             <button className="btn btn-export" onClick={handleExport}>📥 Export Excel</button>
           )}
@@ -173,7 +176,7 @@ export default function BorrowingList() {
         </div>
       </div>
 
-      {filter === 'active' && <RapidEntry type="borrowing" allLoans={allLoans} />}
+      <RapidEntry type="borrowing" allLoans={allLoans} open={quickEntryOpen} onToggle={() => setQuickEntryOpen(prev => !prev)} />
 
       <div className="toolbar">
         <input

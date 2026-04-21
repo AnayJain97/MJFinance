@@ -13,12 +13,11 @@ import { useOrg, getOrgCollection } from '../../../context/OrgContext';
  *   allLoans    - (borrowing only) loans collection for client auto-fill
  *   onToast     - parent toast setter (optional, falls back to internal)
  */
-export default function RapidEntry({ type, allLoans = [] }) {
+export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
   const isLending = type === 'lending';
   const { selectedOrg } = useOrg();
   const collectionName = getOrgCollection(selectedOrg, isLending ? 'loans' : 'borrowings');
 
-  const [open, setOpen] = useState(false);
   const [showDefaults, setShowDefaults] = useState(false);
 
   // Sticky defaults
@@ -33,6 +32,13 @@ export default function RapidEntry({ type, allLoans = [] }) {
   const [amount, setAmount] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
 
+  const handleStartDateChange = (val) => {
+    setStartDate(val);
+    if (val) {
+      setDefaults(prev => ({ ...prev, endDate: toInputDate(getFYEndDate(new Date(val))) }));
+    }
+  };
+
   const [saving, setSaving] = useState(false);
   const [sessionCount, setSessionCount] = useState(0);
   const [lastAdded, setLastAdded] = useState(null); // { id, name, amount }
@@ -40,16 +46,15 @@ export default function RapidEntry({ type, allLoans = [] }) {
 
   const nameRef = useRef(null);
 
-  // Client rate map for borrowing auto-fill
+  // Client name list for autocomplete (both lending and borrowing)
   const clientRates = useMemo(() => {
-    if (isLending) return {};
     const map = {};
     allLoans.forEach(l => {
       const key = l.clientName.trim().toLowerCase();
       if (!map[key]) map[key] = { clientName: l.clientName, rate: l.monthlyInterestRate };
     });
     return map;
-  }, [isLending, allLoans]);
+  }, [allLoans]);
 
   const clientNames = useMemo(() => Object.values(clientRates).map(c => c.clientName), [clientRates]);
 
@@ -143,11 +148,7 @@ export default function RapidEntry({ type, allLoans = [] }) {
   };
 
   if (!open) {
-    return (
-      <button className="rapid-entry-toggle" onClick={() => setOpen(true)}>
-        ⚡ Quick Entry
-      </button>
-    );
+    return null;
   }
 
   return (
@@ -162,7 +163,7 @@ export default function RapidEntry({ type, allLoans = [] }) {
             {showDefaults ? '▾ Hide Defaults' : '▸ Defaults'}: Rate {defaults.monthlyInterestRate}%
             {defaults.endDate ? ` | End: ${defaults.endDate}` : ''}
           </button>
-          <button className="rapid-entry-close" onClick={() => setOpen(false)} title="Close">✕</button>
+          <button className="rapid-entry-close" onClick={onToggle} title="Close">✕</button>
         </div>
       </div>
 
@@ -206,14 +207,12 @@ export default function RapidEntry({ type, allLoans = [] }) {
             value={name}
             onChange={e => handleNameChange(e.target.value)}
             placeholder="Client name"
-            list={!isLending ? 'rapid-client-suggestions' : undefined}
+            list="rapid-client-suggestions"
             autoFocus
           />
-          {!isLending && (
-            <datalist id="rapid-client-suggestions">
-              {clientNames.map(n => <option key={n} value={n} />)}
-            </datalist>
-          )}
+          <datalist id="rapid-client-suggestions">
+            {clientNames.map(n => <option key={n} value={n} />)}
+          </datalist>
         </div>
         <div className="rapid-entry-field rapid-entry-field-amount">
           <label>Amount *</label>
@@ -231,7 +230,7 @@ export default function RapidEntry({ type, allLoans = [] }) {
           <input
             type="date"
             value={startDate}
-            onChange={e => setStartDate(e.target.value)}
+            onChange={e => handleStartDateChange(e.target.value)}
           />
         </div>
         <button
