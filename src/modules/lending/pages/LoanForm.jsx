@@ -3,13 +3,15 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useDocument, addDocument, updateDocument } from '../../../hooks/useFirestore';
 import { toInputDate, fromInputDate, getFYEndDate } from '../../../utils/dateUtils';
 import Toast from '../../../components/Toast';
+import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function LoanForm() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
+  const { selectedOrg } = useOrg();
 
-  const { data: existing, loading: loadingDoc } = useDocument(isEdit ? `loans/${id}` : null);
+  const { data: existing, loading: loadingDoc } = useDocument(isEdit ? `${getOrgCollection(selectedOrg, 'loans')}/${id}` : null);
 
   const [form, setForm] = useState({
     clientName: '',
@@ -70,12 +72,12 @@ export default function LoanForm() {
       };
 
       if (isEdit) {
-        await updateDocument(`loans/${id}`, data);
+        await updateDocument(`${getOrgCollection(selectedOrg, 'loans')}/${id}`, data);
         setToast({ message: 'Loan updated successfully', type: 'success' });
         setTimeout(() => navigate(`/money-lending/lending/${id}`), 500);
       } else {
         data.totalRepaid = 0;
-        const docRef = await addDocument('loans', data);
+        const docRef = await addDocument(getOrgCollection(selectedOrg, 'loans'), data);
         setToast({ message: 'Loan created successfully', type: 'success' });
         setTimeout(() => navigate(`/money-lending/lending/${docRef.id}`), 500);
       }

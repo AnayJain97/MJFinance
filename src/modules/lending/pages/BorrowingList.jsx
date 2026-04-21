@@ -8,6 +8,8 @@ import { formatDate, getCurrentFYLabel } from '../../../utils/dateUtils';
 import LendingTabs from '../components/LendingTabs';
 import Tooltip from '../../../components/Tooltip';
 import Toast from '../../../components/Toast';
+import RapidEntry from '../components/RapidEntry';
+import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function BorrowingList() {
   const [search, setSearch] = useState('');
@@ -16,8 +18,10 @@ export default function BorrowingList() {
   const [sortDir, setSortDir] = useState('asc');
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const { selectedOrg } = useOrg();
 
-  const { data: allBorrowings, loading } = useCollection('borrowings');
+  const { data: allBorrowings, loading } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
+  const { data: allLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
 
   const filtered = useMemo(() => {
     let items = allBorrowings;
@@ -101,14 +105,14 @@ export default function BorrowingList() {
     ];
     if (filter === 'all') cols.push({ header: 'Status', key: 'status', width: 10 });
 
-    exportToExcel(rows, cols, `Borrowings FY ${getCurrentFYLabel()}`, `Borrowings_${getCurrentFYLabel()}`);
+    exportToExcel(rows, cols, `Borrowings FY ${getCurrentFYLabel()}`, `${selectedOrg}_Borrowings_${getCurrentFYLabel()}`);
   };
 
   const handleDelete = async (id, name) => {
     if (!window.confirm(`Delete closed borrowing for "${name}"?`)) return;
     setDeleting(id);
     try {
-      await deleteDocument(`borrowings/${id}`);
+      await deleteDocument(`${getOrgCollection(selectedOrg, 'borrowings')}/${id}`);
       setToast({ message: 'Borrowing deleted', type: 'success' });
     } catch (err) {
       setToast({ message: 'Error deleting borrowing', type: 'error' });
@@ -122,7 +126,7 @@ export default function BorrowingList() {
     if (!closedItems.length) return;
     if (!window.confirm(`Delete all ${closedItems.length} closed borrowing(s)? This cannot be undone.`)) return;
     try {
-      await Promise.all(closedItems.map(b => deleteDocument(`borrowings/${b.id}`)));
+      await Promise.all(closedItems.map(b => deleteDocument(`${getOrgCollection(selectedOrg, 'borrowings')}/${b.id}`)));
       setToast({ message: `${closedItems.length} closed borrowing(s) deleted`, type: 'success' });
     } catch (err) {
       setToast({ message: 'Error deleting some borrowings', type: 'error' });
@@ -168,6 +172,8 @@ export default function BorrowingList() {
           <div className="value" style={{ color: '#dc3545' }}>{formatCurrency(totals.totalCredit)}</div>
         </div>
       </div>
+
+      {filter === 'active' && <RapidEntry type="borrowing" allLoans={allLoans} />}
 
       <div className="toolbar">
         <input

@@ -6,13 +6,15 @@ import { formatCurrency, formatPercent } from '../../../utils/formatUtils';
 import { formatDate } from '../../../utils/dateUtils';
 import Tooltip from '../../../components/Tooltip';
 import { exportMultiSheetExcel } from '../../../services/exportService';
+import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function ClientDetail() {
   const { name } = useParams();
   const clientName = decodeURIComponent(name);
+  const { selectedOrg } = useOrg();
 
-  const { data: allLoans, loading: loadingLoans } = useCollection('loans');
-  const { data: allBorrowings, loading: loadingBorrowings } = useCollection('borrowings');
+  const { data: allLoans, loading: loadingLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
+  const { data: allBorrowings, loading: loadingBorrowings } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
 
   const clientLoans = useMemo(() => {
     return allLoans.filter(l => l.clientName.trim().toLowerCase() === clientName.trim().toLowerCase());
@@ -84,7 +86,7 @@ export default function ClientDetail() {
     }
 
     if (sheets.length > 0) {
-      exportMultiSheetExcel(sheets, `${clientName.replace(/\s+/g, '_')}`);
+      exportMultiSheetExcel(sheets, `${selectedOrg}_${clientName.replace(/\s+/g, '_')}`);
     }
   };
 

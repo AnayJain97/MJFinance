@@ -6,14 +6,16 @@ import { exportToExcel } from '../../../services/exportService';
 import { formatCurrency } from '../../../utils/formatUtils';
 import { getCurrentFYLabel } from '../../../utils/dateUtils';
 import LendingTabs from '../components/LendingTabs';
+import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function FinalizedView() {
   const [search, setSearch] = useState('');
   const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
+  const { selectedOrg } = useOrg();
 
-  const { data: loans, loading: loadingLoans } = useCollection('loans');
-  const { data: borrowings, loading: loadingBorrowings } = useCollection('borrowings');
+  const { data: loans, loading: loadingLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
+  const { data: borrowings, loading: loadingBorrowings } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
 
   const clientSummaries = useMemo(() => {
     if (!loans.length && !borrowings.length) return [];
@@ -111,7 +113,7 @@ export default function FinalizedView() {
       { header: 'Borrowing Int.', key: 'borrowingInterest', width: 15 },
       { header: 'Credit', key: 'totalBorrowingCredit', width: 15 },
       { header: 'Net', key: 'netAmount', width: 15 },
-    ], `Finalized FY ${getCurrentFYLabel()}`, `Finalized_${getCurrentFYLabel()}`);
+    ], `Finalized FY ${getCurrentFYLabel()}`, `${selectedOrg}_Finalized_${getCurrentFYLabel()}`);
   };
 
   if (loadingLoans || loadingBorrowings) {

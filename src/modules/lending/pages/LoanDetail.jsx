@@ -5,13 +5,15 @@ import { getLendingSummary } from '../utils/lendingCalcs';
 import { formatCurrency, formatPercent } from '../../../utils/formatUtils';
 import { formatDate } from '../../../utils/dateUtils';
 import Toast from '../../../components/Toast';
+import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function LoanDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
+  const { selectedOrg } = useOrg();
 
-  const { data: loan, loading: loadingLoan } = useDocument(`loans/${id}`);
+  const { data: loan, loading: loadingLoan } = useDocument(`${getOrgCollection(selectedOrg, 'loans')}/${id}`);
 
   const summary = useMemo(() => {
     if (!loan) return null;
@@ -21,7 +23,7 @@ export default function LoanDetail() {
   const handleCloseLoan = async () => {
     if (!window.confirm('Are you sure you want to close this loan?')) return;
     try {
-      await updateDocument(`loans/${id}`, { status: 'closed' });
+      await updateDocument(`${getOrgCollection(selectedOrg, 'loans')}/${id}`, { status: 'closed' });
       setToast({ message: 'Loan closed', type: 'success' });
     } catch (err) {
       setToast({ message: 'Error closing loan', type: 'error' });
@@ -30,7 +32,7 @@ export default function LoanDetail() {
 
   const handleReopenLoan = async () => {
     try {
-      await updateDocument(`loans/${id}`, { status: 'active' });
+      await updateDocument(`${getOrgCollection(selectedOrg, 'loans')}/${id}`, { status: 'active' });
       setToast({ message: 'Loan reopened', type: 'success' });
     } catch (err) {
       setToast({ message: 'Error reopening loan', type: 'error' });

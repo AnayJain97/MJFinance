@@ -3,14 +3,16 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useCollection, useDocument, addDocument, updateDocument } from '../../../hooks/useFirestore';
 import { fromInputDate, toInputDate, getFYEndDate } from '../../../utils/dateUtils';
 import Toast from '../../../components/Toast';
+import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function BorrowingForm() {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEdit = Boolean(id);
+  const { selectedOrg } = useOrg();
 
-  const { data: allLoans } = useCollection('loans');
-  const { data: existing, loading: loadingDoc } = useDocument(isEdit ? `borrowings/${id}` : null);
+  const { data: allLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
+  const { data: existing, loading: loadingDoc } = useDocument(isEdit ? `${getOrgCollection(selectedOrg, 'borrowings')}/${id}` : null);
 
   // Build client → rate map from existing lendings for auto-fill
   const clientRates = useMemo(() => {
@@ -96,11 +98,11 @@ export default function BorrowingForm() {
       };
 
       if (isEdit) {
-        await updateDocument(`borrowings/${id}`, data);
+        await updateDocument(`${getOrgCollection(selectedOrg, 'borrowings')}/${id}`, data);
         setToast({ message: 'Borrowing updated successfully', type: 'success' });
         setTimeout(() => navigate(`/money-lending/borrowing/${id}`), 500);
       } else {
-        const docRef = await addDocument('borrowings', data);
+        const docRef = await addDocument(getOrgCollection(selectedOrg, 'borrowings'), data);
         setToast({ message: 'Borrowing recorded successfully', type: 'success' });
         setTimeout(() => navigate(`/money-lending/borrowing/${docRef.id}`), 500);
       }

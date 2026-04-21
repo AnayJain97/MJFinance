@@ -9,6 +9,8 @@ import { formatCurrency, formatPercent } from '../../../utils/formatUtils';
 import { formatDate, getCurrentFYLabel } from '../../../utils/dateUtils';
 import Tooltip from '../../../components/Tooltip';
 import Toast from '../../../components/Toast';
+import RapidEntry from '../components/RapidEntry';
+import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function LoanList() {
   const [search, setSearch] = useState('');
@@ -17,8 +19,9 @@ export default function LoanList() {
   const [sortDir, setSortDir] = useState('asc');
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const { selectedOrg } = useOrg();
 
-  const { data: allLoans, loading } = useCollection('loans');
+  const { data: allLoans, loading } = useCollection(getOrgCollection(selectedOrg, 'loans'));
 
   const filteredLoans = useMemo(() => {
     let loans = allLoans;
@@ -97,14 +100,14 @@ export default function LoanList() {
     ];
     if (filter === 'all') cols.push({ header: 'Status', key: 'status', width: 10 });
 
-    exportToExcel(rows, cols, `Loans FY ${getCurrentFYLabel()}`, `Loans_${getCurrentFYLabel()}`);
+    exportToExcel(rows, cols, `Loans FY ${getCurrentFYLabel()}`, `${selectedOrg}_Loans_${getCurrentFYLabel()}`);
   };
 
   const handleDelete = async (id, name) => {
     if (!window.confirm(`Delete closed loan for "${name}"?`)) return;
     setDeleting(id);
     try {
-      await deleteDocument(`loans/${id}`);
+      await deleteDocument(`${getOrgCollection(selectedOrg, 'loans')}/${id}`);
       setToast({ message: 'Loan deleted', type: 'success' });
     } catch (err) {
       setToast({ message: 'Error deleting loan', type: 'error' });
@@ -118,7 +121,7 @@ export default function LoanList() {
     if (!closedLoans.length) return;
     if (!window.confirm(`Delete all ${closedLoans.length} closed loan(s)? This cannot be undone.`)) return;
     try {
-      await Promise.all(closedLoans.map(l => deleteDocument(`loans/${l.id}`)));
+      await Promise.all(closedLoans.map(l => deleteDocument(`${getOrgCollection(selectedOrg, 'loans')}/${l.id}`)));
       setToast({ message: `${closedLoans.length} closed loan(s) deleted`, type: 'success' });
     } catch (err) {
       setToast({ message: 'Error deleting some loans', type: 'error' });
@@ -147,6 +150,8 @@ export default function LoanList() {
       </div>
 
       <LoanSummary loans={filteredLoans} summaries={summaries} />
+
+      {filter === 'active' && <RapidEntry type="lending" />}
 
       <div className="toolbar">
         <input
