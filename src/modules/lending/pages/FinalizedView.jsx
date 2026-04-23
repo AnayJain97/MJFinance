@@ -1,22 +1,29 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { useCollection } from '../../../hooks/useFirestore';
+import { useCollection, deleteDocument } from '../../../hooks/useFirestore';
+import { useLocks } from '../../../hooks/useLocks';
+import { lockFY, unlockFY } from '../../../services/lockService';
 import { getClientFinalized } from '../utils/lendingCalcs';
 import { exportToExcel } from '../../../services/exportService';
 import { formatCurrency } from '../../../utils/formatUtils';
 import { getCurrentFYLabel, toJSDate } from '../../../utils/dateUtils';
 import LendingTabs from '../components/LendingTabs';
 import FYAccordion from '../components/FYAccordion';
+import PasswordReauthDialog from '../../../components/PasswordReauthDialog';
+import Toast from '../../../components/Toast';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function FinalizedView() {
   const [search, setSearch] = useState('');
   const [sortCol, setSortCol] = useState('client');
   const [sortDir, setSortDir] = useState('asc');
-  const { selectedOrg } = useOrg();
+  const [toast, setToast] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null); // { kind: 'lock'|'unlock'|'deleteAll', fy }
+  const { selectedOrg, canWrite } = useOrg();
 
   const { data: loans, loading: loadingLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
   const { data: borrowings, loading: loadingBorrowings } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
+  const { isLocked, canLockFY } = useLocks(selectedOrg);
 
   // Group active loans & borrowings by FY, compute per-FY finalized summaries
   const fyGroupedFinalized = useMemo(() => {
@@ -40,6 +47,9 @@ export default function FinalizedView() {
 
     return grouped;
   }, [loans, borrowings]);
+
+  // All FYs that have data — used for canLockFY ordering check
+  const allFYsWithData = useMemo(() => Object.keys(fyGroupedFinalized).sort(), [fyGroupedFinalized]);
 
   // Current FY summaries for the summary cards
   const currentFYSummaries = useMemo(() => {
@@ -114,11 +124,8 @@ export default function FinalizedView() {
     };
   }, [currentFYSummaries]);
 
-  const handleExport = () => {
-    // Export current FY data
-    const currentFY = getCurrentFYLabel();
-    const data = sortedGrouped[currentFY] || [];
-    const rows = data.map(c => ({
+  const handleExport = (fy, items) => {
+    const rows = items.map(c => ({
       clientName: c.clientName,
       totalLent: c.totalLent,
       lendingInterest: c.totalLendingInterest,
@@ -138,7 +145,32 @@ export default function FinalizedView() {
       { header: 'Borrowing Int.', key: 'borrowingInterest', width: 15 },
       { header: 'Credit', key: 'totalBorrowingCredit', width: 15 },
       { header: 'Net', key: 'netAmount', width: 15 },
-    ], `Finalized FY ${currentFY}`, `${selectedOrg}_Finalized_${currentFY}`);
+    ], `Finalized FY ${fy}`, `${selectedOrg}_Finalized_${fy}`);
+  };
+
+  // Lock/unlock/delete-all handlers (executed after password reauth)
+  const runLock = (fy) => async () => {
+    await lockFY(selectedOrg, fy);
+    setToast({ message: `FY ${fy} locked`, type: 'success' });
+    setPendingAction(null);
+  };
+  const runUnlock = (fy) => async () => {
+    await unlockFY(selectedOrg, fy);
+    setToast({ message: `FY ${fy} unlocked`, type: 'success' });
+    setPendingAction(null);
+  };
+  const runDeleteAll = (fy) => async () => {
+    const fyLoans = loans.filter(l => getCurrentFYLabel(toJSDate(l.loanDate)) === fy);
+    const fyBorrowings = borrowings.filter(b => getCurrentFYLabel(toJSDate(b.borrowDate)) === fy);
+    for (const l of fyLoans) {
+      await deleteDocument(`${getOrgCollection(selectedOrg, 'loans')}/${l.id}`);
+    }
+    for (const b of fyBorrowings) {
+      await deleteDocument(`${getOrgCollection(selectedOrg, 'borrowings')}/${b.id}`);
+    }
+    await unlockFY(selectedOrg, fy);
+    setToast({ message: `FY ${fy} data deleted`, type: 'success' });
+    setPendingAction(null);
   };
 
   if (loadingLoans || loadingBorrowings) {
@@ -161,11 +193,6 @@ export default function FinalizedView() {
 
       <div className="page-header">
         <h1>Finalized View — FY {getCurrentFYLabel()}</h1>
-        <div className="page-actions">
-          {currentFYSummaries.length > 0 && (
-            <button className="btn btn-export" onClick={handleExport}>📥 Export Excel</button>
-          )}
-        </div>
       </div>
 
       {/* Grand totals — current FY */}
@@ -199,6 +226,49 @@ export default function FinalizedView() {
       <FYAccordion
         groupedData={sortedGrouped}
         emptyMessage="No data yet. Add lendings and borrowings to see the finalized view."
+        isFYLocked={isLocked}
+        renderHeaderActions={(fy, items) => {
+          const locked = isLocked(fy);
+          const eligibleToLock = !locked && canLockFY(fy, allFYsWithData);
+          return (
+            <>
+              <button
+                className="btn btn-sm btn-export"
+                onClick={() => handleExport(fy, items)}
+                title={`Export FY ${fy}`}
+              >
+                📥 Export
+              </button>
+              {canWrite && !locked && (
+                <button
+                  className="btn btn-sm btn-outline"
+                  onClick={() => setPendingAction({ kind: 'lock', fy, blocked: !eligibleToLock })}
+                  title={eligibleToLock ? 'Lock this FY (requires password)' : 'Previous FYs must be locked first'}
+                >
+                  🔒 Lock
+                </button>
+              )}
+              {canWrite && locked && (
+                <>
+                  <button
+                    className="btn btn-sm btn-outline"
+                    onClick={() => setPendingAction({ kind: 'unlock', fy })}
+                    title="Unlock this FY (requires password)"
+                  >
+                    🔓 Unlock
+                  </button>
+                  <button
+                    className="btn btn-sm btn-danger"
+                    onClick={() => setPendingAction({ kind: 'deleteAll', fy })}
+                    title="Delete all data for this FY (requires password)"
+                  >
+                    🗑️ Delete All
+                  </button>
+                </>
+              )}
+            </>
+          );
+        }}
         renderSection={(fy, items) => {
           const totals = computeFYTotals(items);
           return (
@@ -255,6 +325,54 @@ export default function FinalizedView() {
           );
         }}
       />
+
+      <PasswordReauthDialog
+        open={Boolean(pendingAction) && !pendingAction?.blocked}
+        title={
+          pendingAction?.kind === 'lock' ? `Lock FY ${pendingAction.fy}` :
+          pendingAction?.kind === 'unlock' ? `Unlock FY ${pendingAction.fy}` :
+          pendingAction?.kind === 'deleteAll' ? `Delete ALL data for FY ${pendingAction.fy}?` : ''
+        }
+        description={
+          pendingAction?.kind === 'lock' ? `Locking FY ${pendingAction.fy} will block new entries dated in this FY (or any earlier FY) and freeze its carry-forward. You can unlock later with your password.` :
+          pendingAction?.kind === 'unlock' ? `Re-authentication is required to unlock FY ${pendingAction.fy}.` :
+          pendingAction?.kind === 'deleteAll' ? `This permanently deletes every lending and borrowing entry dated in FY ${pendingAction.fy}. This cannot be undone.` : ''
+        }
+        confirmLabel={
+          pendingAction?.kind === 'lock' ? 'Lock' :
+          pendingAction?.kind === 'unlock' ? 'Unlock' :
+          pendingAction?.kind === 'deleteAll' ? 'Delete All' : 'Confirm'
+        }
+        confirmVariant={pendingAction?.kind === 'deleteAll' ? 'danger' : 'primary'}
+        onCancel={() => setPendingAction(null)}
+        onConfirm={
+          pendingAction?.kind === 'lock' ? runLock(pendingAction.fy) :
+          pendingAction?.kind === 'unlock' ? runUnlock(pendingAction.fy) :
+          pendingAction?.kind === 'deleteAll' ? runDeleteAll(pendingAction.fy) :
+          (async () => {})
+        }
+      />
+
+      {pendingAction?.blocked && (
+        <div className="modal-overlay" onClick={() => setPendingAction(null)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <h3 style={{ marginBottom: '0.5rem' }}>Cannot lock FY {pendingAction.fy}</h3>
+            <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '1rem' }}>
+              All previous financial years with data must be locked before this one. Lock the earlier FYs first, then return here.
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setPendingAction(null)}
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   );
 }

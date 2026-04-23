@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useCollection, useDocument, addDocument, updateDocument } from '../../../hooks/useFirestore';
-import { toInputDate, fromInputDate, getFYEndDate } from '../../../utils/dateUtils';
+import { useLocks } from '../../../hooks/useLocks';
+import { toInputDate, fromInputDate, getFYEndDate, getCurrentFYLabel } from '../../../utils/dateUtils';
 import Toast from '../../../components/Toast';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
@@ -10,6 +11,7 @@ export default function LoanForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const { selectedOrg, canWrite } = useOrg();
+  const { isAddBlockedForFY, maxLockedFY } = useLocks(selectedOrg);
 
   useEffect(() => { if (!canWrite) navigate('/money-lending/lending', { replace: true }); }, [canWrite, navigate]);
 
@@ -21,6 +23,16 @@ export default function LoanForm() {
       navigate(`/money-lending/lending/${id}`, { replace: true });
     }
   }, [isEdit, existing, id, navigate]);
+
+  // Redirect away if the entry's FY is locked
+  useEffect(() => {
+    if (isEdit && existing && !existing.isCarryForward) {
+      const fy = getCurrentFYLabel(existing.loanDate?.toDate ? existing.loanDate.toDate() : new Date(existing.loanDate));
+      if (isAddBlockedForFY(fy)) {
+        navigate(`/money-lending/lending/${id}`, { replace: true });
+      }
+    }
+  }, [isEdit, existing, id, navigate, isAddBlockedForFY]);
 
   const { data: allLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
 
@@ -80,6 +92,13 @@ export default function LoanForm() {
     }
     if (form.endDate && form.endDate <= form.loanDate) {
       setToast({ message: 'End date must be after loan date', type: 'error' });
+      return;
+    }
+
+    // Block if target FY is locked (or any FY before is locked)
+    const targetFY = getCurrentFYLabel(fromInputDate(form.loanDate));
+    if (isAddBlockedForFY(targetFY)) {
+      setToast({ message: `Cannot save: FY ${targetFY} is locked (or a later FY is locked). Loan date must be after FY ${maxLockedFY}.`, type: 'error' });
       return;
     }
 

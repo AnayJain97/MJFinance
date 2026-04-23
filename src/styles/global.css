@@ -77,6 +77,12 @@ input, select, textarea, button { font: inherit; }
 }
 .btn-export { background: #198754; color: #fff; }
 .btn-export:hover { background: #157347; }
+.btn-locked {
+  opacity: 0.55;
+  cursor: not-allowed !important;
+  pointer-events: auto;
+}
+.btn-locked:hover { transform: none; }
 
 /* === App Layout === */
 .app-layout { display: flex; height: 100vh; overflow: hidden; }
@@ -357,6 +363,33 @@ tr:hover td { background: #fafbfc; }
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 .fy-section-current { box-shadow: 0 2px 12px rgba(67,97,238,0.12); }
+.fy-section-locked { background: #f7f7f8; }
+.fy-section-locked .fy-header { background: #efefef; color: #666; }
+.fy-section-locked .fy-header:hover,
+.fy-section-locked .fy-header-open { background: #e6e6e6; }
+.fy-section-locked table tbody tr td { color: #6a6a6a; background: #fafafa; }
+.fy-section-locked table tbody tr:hover td { background: #f3f3f3; }
+.fy-section-locked tr.carry-forward-row { background: #f0f0f4; }
+.fy-section-locked tr.carry-forward-row:hover td { background: #ebebef; }
+
+.fy-header-bar {
+  display: flex; align-items: stretch; background: #f8f9fa;
+}
+.fy-header-bar-locked { background: #efefef; }
+.fy-header-bar > .fy-header { flex: 1; background: transparent; }
+.fy-header-actions {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0 0.75rem;
+}
+.fy-header-actions .btn-sm { font-size: 0.78rem; padding: 0.3rem 0.65rem; }
+
+.fy-badge-locked {
+  margin-left: 0.5rem;
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  background: #6c757d; color: #fff;
+  padding: 0.15rem 0.5rem; border-radius: 10px;
+  letter-spacing: 0.3px;
+}
 
 .fy-header {
   display: flex; align-items: center; gap: 0.6rem;

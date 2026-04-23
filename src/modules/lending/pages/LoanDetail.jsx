@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useDocument, deleteDocument } from '../../../hooks/useFirestore';
+import { useLocks } from '../../../hooks/useLocks';
 import { getLendingSummary } from '../utils/lendingCalcs';
 import { formatCurrency, formatPercent } from '../../../utils/formatUtils';
-import { formatDate } from '../../../utils/dateUtils';
+import { formatDate, getCurrentFYLabel, toJSDate } from '../../../utils/dateUtils';
 import Toast from '../../../components/Toast';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
@@ -12,6 +13,7 @@ export default function LoanDetail() {
   const navigate = useNavigate();
   const [toast, setToast] = useState(null);
   const { selectedOrg, canWrite } = useOrg();
+  const { isLocked } = useLocks(selectedOrg);
 
   const { data: loan, loading: loadingLoan } = useDocument(`${getOrgCollection(selectedOrg, 'loans')}/${id}`);
 
@@ -20,7 +22,10 @@ export default function LoanDetail() {
     return getLendingSummary(loan);
   }, [loan]);
 
+  const fyLocked = loan ? isLocked(getCurrentFYLabel(toJSDate(loan.loanDate))) : false;
+
   const handleDelete = async () => {
+    if (fyLocked) return;
     if (!window.confirm(`Are you sure you want to delete this loan for "${loan?.clientName}"? This cannot be undone.`)) return;
     try {
       await deleteDocument(`${getOrgCollection(selectedOrg, 'loans')}/${id}`);
@@ -55,9 +60,15 @@ export default function LoanDetail() {
           <h1>{loan.clientName}</h1>
         </div>
         <div className="page-actions">
-          {canWrite && !loan.isCarryForward && <Link to={`/money-lending/lending/${id}/edit`} className="btn btn-outline">✏️ Edit</Link>}
           {canWrite && !loan.isCarryForward && (
-            <button className="btn btn-danger" onClick={handleDelete}>🗑️ Delete</button>
+            fyLocked
+              ? <span className="btn btn-outline btn-locked" title="FY is locked">🔒 Edit</span>
+              : <Link to={`/money-lending/lending/${id}/edit`} className="btn btn-outline">✏️ Edit</Link>
+          )}
+          {canWrite && !loan.isCarryForward && (
+            fyLocked
+              ? <button className="btn btn-danger btn-locked" disabled title="FY is locked">🔒 Delete</button>
+              : <button className="btn btn-danger" onClick={handleDelete}>🗑️ Delete</button>
           )}
           {loan.isCarryForward && <span className="carry-forward-badge" style={{ fontSize: '0.85rem', padding: '0.3rem 0.75rem' }}>↪ Carry Forward — Auto-managed</span>}
         </div>

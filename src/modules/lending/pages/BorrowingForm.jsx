@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useCollection, useDocument, addDocument, updateDocument } from '../../../hooks/useFirestore';
-import { fromInputDate, toInputDate, getFYEndDate } from '../../../utils/dateUtils';
+import { useLocks } from '../../../hooks/useLocks';
+import { fromInputDate, toInputDate, getFYEndDate, getCurrentFYLabel } from '../../../utils/dateUtils';
 import Toast from '../../../components/Toast';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
@@ -10,6 +11,7 @@ export default function BorrowingForm() {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const { selectedOrg, canWrite } = useOrg();
+  const { isAddBlockedForFY, maxLockedFY } = useLocks(selectedOrg);
 
   useEffect(() => { if (!canWrite) navigate('/money-lending/borrowing', { replace: true }); }, [canWrite, navigate]);
 
@@ -22,6 +24,16 @@ export default function BorrowingForm() {
       navigate(`/money-lending/borrowing/${id}`, { replace: true });
     }
   }, [isEdit, existing, id, navigate]);
+
+  // Redirect away if the entry's FY is locked
+  useEffect(() => {
+    if (isEdit && existing && !existing.isCarryForward) {
+      const fy = getCurrentFYLabel(existing.borrowDate?.toDate ? existing.borrowDate.toDate() : new Date(existing.borrowDate));
+      if (isAddBlockedForFY(fy)) {
+        navigate(`/money-lending/borrowing/${id}`, { replace: true });
+      }
+    }
+  }, [isEdit, existing, id, navigate, isAddBlockedForFY]);
 
   // Build client → rate map from existing lendings for auto-fill
   const clientRates = useMemo(() => {
@@ -94,6 +106,13 @@ export default function BorrowingForm() {
     }
     if (form.endDate && form.endDate <= form.borrowDate) {
       setToast({ message: 'End date must be after borrowing date', type: 'error' });
+      return;
+    }
+
+    // Block if target FY is locked (or any FY before is locked)
+    const targetFY = getCurrentFYLabel(fromInputDate(form.borrowDate));
+    if (isAddBlockedForFY(targetFY)) {
+      setToast({ message: `Cannot save: FY ${targetFY} is locked (or a later FY is locked). Date must be after FY ${maxLockedFY}.`, type: 'error' });
       return;
     }
 

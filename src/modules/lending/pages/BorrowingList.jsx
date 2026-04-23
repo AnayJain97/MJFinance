@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useCollection } from '../../../hooks/useFirestore';
 import { useCarryForward } from '../../../hooks/useCarryForward';
+import { useLocks } from '../../../hooks/useLocks';
 import { getBorrowingSummary, getCurrentCarryForward } from '../utils/lendingCalcs';
 import { exportToExcel } from '../../../services/exportService';
 import { formatCurrency, formatPercent } from '../../../utils/formatUtils';
@@ -23,6 +24,7 @@ export default function BorrowingList() {
 
   const { data: allBorrowings, loading } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
   const { data: allLoans, loading: loadingLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
+  const { isLocked } = useLocks(selectedOrg);
 
   // Auto-create/update carry-forward entries (ensures they exist even if Loans page hasn't been visited)
   useCarryForward(selectedOrg, allLoans, allBorrowings, canWrite && !loading && !loadingLoans);
@@ -108,8 +110,8 @@ export default function BorrowingList() {
     </th>
   );
 
-  const handleExport = () => {
-    const rows = sortedData.map(({ borrowing: b, summary: s }) => ({
+  const handleExport = (fyLabel, items) => {
+    const rows = items.map(({ borrowing: b, summary: s }) => ({
       date: formatDate(b.borrowDate),
       amount: b.amount,
       clientName: b.clientName,
@@ -127,7 +129,7 @@ export default function BorrowingList() {
       { header: 'Rate/Mo', key: 'rate', width: 10, noTotal: true },
     ];
 
-    exportToExcel(rows, cols, `Borrowings FY ${getCurrentFYLabel()}`, `${selectedOrg}_Borrowings_${getCurrentFYLabel()}`);
+    exportToExcel(rows, cols, `Borrowings FY ${fyLabel}`, `${selectedOrg}_Borrowings_${fyLabel}`);
   };
 
   if (loading) {
@@ -145,9 +147,6 @@ export default function BorrowingList() {
             <button className="btn btn-primary" onClick={() => setQuickEntryOpen(prev => !prev)}>
               {quickEntryOpen ? '✕ Close' : '+ New Borrowing'}
             </button>
-          )}
-          {filtered.length > 0 && (
-            <button className="btn btn-export" onClick={handleExport}>📥 Export Excel</button>
           )}
         </div>
       </div>
@@ -192,6 +191,16 @@ export default function BorrowingList() {
         <FYAccordion
           groupedData={fyGroupedData}
           emptyMessage="No borrowings found."
+          isFYLocked={isLocked}
+          renderHeaderActions={(fy, items) => (
+            <button
+              className="btn btn-sm btn-export"
+              onClick={() => handleExport(fy, items)}
+              title={`Export FY ${fy}`}
+            >
+              📥 Export
+            </button>
+          )}
           renderSection={(fy, items) => (
             <div className="table-wrap">
               <table>

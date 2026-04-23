@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo } from 'react';
 import { addDocument, deleteDocument } from '../../../hooks/useFirestore';
-import { fromInputDate, toInputDate, getFYEndDate } from '../../../utils/dateUtils';
+import { useLocks } from '../../../hooks/useLocks';
+import { fromInputDate, toInputDate, getFYEndDate, getCurrentFYLabel } from '../../../utils/dateUtils';
 import { formatCurrency } from '../../../utils/formatUtils';
 import Toast from '../../../components/Toast';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
@@ -16,6 +17,7 @@ import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
   const isLending = type === 'lending';
   const { selectedOrg, canWrite } = useOrg();
+  const { isAddBlockedForFY, maxLockedFY } = useLocks(selectedOrg);
   const collectionName = getOrgCollection(selectedOrg, isLending ? 'loans' : 'borrowings');
 
   const [showDefaults, setShowDefaults] = useState(false);
@@ -82,6 +84,12 @@ export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
     }
     if (rate < 0 || rate > 100) {
       setToast({ message: 'Invalid interest rate', type: 'error' });
+      return;
+    }
+
+    const targetFY = getCurrentFYLabel(fromInputDate(startDate));
+    if (isAddBlockedForFY(targetFY)) {
+      setToast({ message: `Cannot add: FY ${targetFY} is locked. Date must be after FY ${maxLockedFY}.`, type: 'error' });
       return;
     }
 
