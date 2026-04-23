@@ -160,7 +160,7 @@ export default function FinalizedView() {
       <LendingTabs />
 
       <div className="page-header">
-        <h1>Finalized View</h1>
+        <h1>Finalized View — FY {getCurrentFYLabel()}</h1>
         <div className="page-actions">
           {currentFYSummaries.length > 0 && (
             <button className="btn btn-export" onClick={handleExport}>📥 Export Excel</button>
@@ -171,15 +171,15 @@ export default function FinalizedView() {
       {/* Grand totals — current FY */}
       <div className="summary-grid">
         <div className="summary-card">
-          <div className="label">Total Lent + Interest (Current FY)</div>
+          <div className="label">Total Lent + Interest</div>
           <div className="value" style={{ color: '#28a745' }}>{formatCurrency(grandTotals.totalLendingDue)}</div>
         </div>
         <div className="summary-card">
-          <div className="label">Total Borrowed + Interest (Current FY)</div>
+          <div className="label">Total Borrowed + Interest</div>
           <div className="value" style={{ color: '#dc3545' }}>{formatCurrency(grandTotals.totalBorrowingCredit)}</div>
         </div>
         <div className="summary-card">
-          <div className="label">Net Receivable (Current FY)</div>
+          <div className="label">Net Receivable</div>
           <div className="value" style={{ color: grandTotals.netAmount >= 0 ? '#28a745' : '#dc3545' }}>
             {formatCurrency(Math.abs(grandTotals.netAmount))}
           </div>

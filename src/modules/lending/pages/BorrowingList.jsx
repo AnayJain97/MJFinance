@@ -139,7 +139,7 @@ export default function BorrowingList() {
       <LendingTabs />
 
       <div className="page-header">
-        <h1>Borrowings (Money Received Back)</h1>
+        <h1>Money Received — FY {getCurrentFYLabel()}</h1>
         <div className="page-actions">
           {canWrite && (
             <button className="btn btn-primary" onClick={() => setQuickEntryOpen(prev => !prev)}>
@@ -154,19 +154,19 @@ export default function BorrowingList() {
 
       <div className="summary-grid">
         <div className="summary-card">
-          <div className="label">Entries (Current FY)</div>
+          <div className="label">Entries</div>
           <div className="value text-primary">{currentFYTotals.count}</div>
         </div>
         <div className="summary-card">
-          <div className="label">Total Received (Current FY)</div>
+          <div className="label">Total Received</div>
           <div className="value">{formatCurrency(currentFYTotals.totalBorrowed)}</div>
         </div>
         <div className="summary-card">
-          <div className="label">Interest till End Date (Current FY)</div>
+          <div className="label">Interest till End Date</div>
           <div className="value" style={{ color: '#dc3545' }}>{formatCurrency(currentFYTotals.totalInterest)}</div>
         </div>
         <div className="summary-card">
-          <div className="label">Total Credit (Current FY)</div>
+          <div className="label">Total Credit</div>
           <div className="value" style={{ color: '#dc3545' }}>{formatCurrency(currentFYTotals.totalCredit)}</div>
         </div>
       </div>

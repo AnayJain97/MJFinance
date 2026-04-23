@@ -141,7 +141,7 @@ export default function LoanList() {
       <LendingTabs />
 
       <div className="page-header">
-        <h1>Lendings (Money Given Out)</h1>
+        <h1>Money Lent Out — FY {getCurrentFYLabel()}</h1>
         <div className="page-actions">
           {canWrite && (
             <button className="btn btn-primary" onClick={() => setQuickEntryOpen(prev => !prev)}>

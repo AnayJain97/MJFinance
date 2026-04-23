@@ -12,19 +12,19 @@ export default function LoanSummary({ loans, summaries, carryForward }) {
   return (
     <div className="summary-grid">
       <div className="summary-card">
-        <div className="label">Entries (Current FY)</div>
+        <div className="label">Entries</div>
         <div className="value text-primary">{activeCount}</div>
       </div>
       <div className="summary-card">
-        <div className="label">Total Lent (Current FY)</div>
+        <div className="label">Total Lent</div>
         <div className="value">{formatCurrency(totalPrincipal)}</div>
       </div>
       <div className="summary-card">
-        <div className="label">Interest till End Date (Current FY)</div>
+        <div className="label">Interest till End Date</div>
         <div className="value" style={{ color: '#28a745' }}>{formatCurrency(totalInterestTillFY)}</div>
       </div>
       <div className="summary-card">
-        <div className="label">Total Due (Current FY)</div>
+        <div className="label">Total Due</div>
         <div className="value" style={{ color: '#28a745' }}>{formatCurrency(totalDue)}</div>
       </div>
     </div>

@@ -18,6 +18,11 @@ export function useCollection(collectionPath) {
   useEffect(() => {
     if (!collectionPath) { setLoading(false); return; }
 
+    // Reset state when path changes (e.g. org switch) so we don't render stale data
+    setData([]);
+    setLoading(true);
+    setError(null);
+
     let unsubFirestore = null;
 
     // Wait for auth state to be resolved before querying
@@ -70,6 +75,11 @@ export function useDocument(docPath) {
 
   useEffect(() => {
     if (!docPath) { setLoading(false); return; }
+
+    // Reset state when path changes so we don't render stale data
+    setData(null);
+    setLoading(true);
+    setError(null);
 
     let unsubFirestore = null;
 
