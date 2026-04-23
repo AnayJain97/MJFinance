@@ -185,71 +185,83 @@ export function calculateFYTotals(loans, borrowings, fyLabel) {
 const CF_RATE = 0.8;
 
 /**
- * Compute carry-forward balances in-memory from all data.
- * Returns the carry-forward principal and interest entering the current FY,
- * so summary cards can show correct totals without depending on Firestore CF entries.
+ * Build the per-FY carry-forward plan: for each previous FY, the net amount
+ * that should be carried into the next FY, with cascading compound interest.
+ * Returns an array of { sourceFY, side: 'lending'|'borrowing', amount }.
+ *
+ * Used by useCarryForward to write CF docs to Firestore. Pure function.
  */
-export function getCarryForwardBalances(loans, borrowings) {
+export function computeCarryForwardPlan(loans, borrowings) {
   const currentFY = getCurrentFYLabel();
 
-  // Collect all FYs from non-carry-forward entries
   const fySet = new Set();
   loans.filter(l => !l.isCarryForward).forEach(l => fySet.add(getCurrentFYLabel(toJSDate(l.loanDate))));
   borrowings.filter(b => !b.isCarryForward).forEach(b => fySet.add(getCurrentFYLabel(toJSDate(b.borrowDate))));
 
-  const previousFYs = [...fySet].filter(fy => fy < currentFY).sort();
-  if (previousFYs.length === 0) return { lending: { amount: 0, interest: 0 }, borrowing: { amount: 0, interest: 0 } };
+  const sortedFYs = [...fySet].filter(fy => fy < currentFY).sort();
+  if (sortedFYs.length === 0) return [];
 
-  // Fill intermediate FYs for proper cascading
   const allPreviousFYs = [];
-  let fy = previousFYs[0];
+  let fy = sortedFYs[0];
   while (fy < currentFY) {
     allPreviousFYs.push(fy);
     fy = getNextFYLabel(fy);
   }
 
-  let cfLending = 0;
-  let cfBorrowing = 0;
+  const plan = [];
+  let pendingNet = 0; // positive = lending excess, negative = borrowing excess
 
-  for (let i = 0; i < allPreviousFYs.length; i++) {
-    const fy = allPreviousFYs[i];
-    const { totalLendingDue, totalBorrowingCredit } = calculateFYTotals(loans, borrowings, fy);
+  for (const sourceFY of allPreviousFYs) {
+    const nextFY = getNextFYLabel(sourceFY);
+    const { totalLendingDue, totalBorrowingCredit } = calculateFYTotals(loans, borrowings, sourceFY);
+    const net = (totalLendingDue - totalBorrowingCredit) + pendingNet;
 
-    cfLending += totalLendingDue;
-    cfBorrowing += totalBorrowingCredit;
-
-    // For intermediate FYs, compound interest into the carry-forward principal
-    // (the last FY's interest is computed separately below for the current FY)
-    if (i < allPreviousFYs.length - 1) {
-      const nextFY = getNextFYLabel(fy);
-      const fyEnd = fyLabelToEndDate(nextFY);
-      const fyStart = new Date(parseInt(nextFY.split('-')[0], 10), 3, 1);
-      const daysInFY = Math.ceil((fyEnd.getTime() - fyStart.getTime()) / (1000 * 60 * 60 * 24));
-      const dailyRate = CF_RATE / 30;
-
-      cfLending = cfLending > 0.01
-        ? Math.round((cfLending + cfLending * (dailyRate / 100) * daysInFY) * 100) / 100
-        : 0;
-      cfBorrowing = cfBorrowing > 0.01
-        ? Math.round((cfBorrowing + cfBorrowing * (dailyRate / 100) * daysInFY) * 100) / 100
-        : 0;
+    if (Math.abs(net) < 0.01) {
+      pendingNet = 0;
+      continue;
     }
+
+    const isLending = net > 0;
+    const absAmount = Math.round(Math.abs(net) * 100) / 100;
+
+    plan.push({ sourceFY, side: isLending ? 'lending' : 'borrowing', amount: absAmount });
+
+    // Cascade: compound interest through nextFY into the FY after
+    const fyEnd = fyLabelToEndDate(nextFY);
+    const fyStart = new Date(parseInt(nextFY.split('-')[0], 10), 3, 1);
+    const daysInFY = Math.ceil((fyEnd.getTime() - fyStart.getTime()) / (1000 * 60 * 60 * 24));
+    const dailyRate = CF_RATE / 30;
+    const interest = absAmount * (dailyRate / 100) * daysInFY;
+    const totalWithInterest = Math.round((absAmount + interest) * 100) / 100;
+    pendingNet = isLending ? totalWithInterest : -totalWithInterest;
   }
 
-  // cfLending/cfBorrowing = carry-forward principal entering the current FY
-  // Now compute the current FY interest on it (from April 1 to March 31)
-  const currentFYEnd = fyLabelToEndDate(currentFY);
-  const currentFYStart = new Date(parseInt(currentFY.split('-')[0], 10), 3, 1);
-  const daysInCurrentFY = Math.ceil((currentFYEnd.getTime() - currentFYStart.getTime()) / (1000 * 60 * 60 * 24));
+  return plan;
+}
+
+/**
+ * Get the carry-forward entry that applies to the current FY (in-memory),
+ * so summary cards work even when Firestore CF docs are missing (e.g. read-only orgs).
+ *
+ * Returns { side: 'lending'|'borrowing'|null, amount, interest }
+ *   - amount: principal entering current FY
+ *   - interest: interest accrued on it through the current FY (to March 31)
+ */
+export function getCurrentCarryForward(loans, borrowings) {
+  const plan = computeCarryForwardPlan(loans, borrowings);
+  if (plan.length === 0) return { side: null, amount: 0, interest: 0 };
+
+  const currentFY = getCurrentFYLabel();
+  // The plan entry whose sourceFY's nextFY equals the current FY is the one
+  // that lands as the CF in the current FY.
+  const currentEntry = plan.find(p => getNextFYLabel(p.sourceFY) === currentFY);
+  if (!currentEntry) return { side: null, amount: 0, interest: 0 };
+
+  const fyEnd = fyLabelToEndDate(currentFY);
+  const fyStart = new Date(parseInt(currentFY.split('-')[0], 10), 3, 1);
+  const daysInFY = Math.ceil((fyEnd.getTime() - fyStart.getTime()) / (1000 * 60 * 60 * 24));
   const dailyRate = CF_RATE / 30;
+  const interest = Math.round(currentEntry.amount * (dailyRate / 100) * daysInFY * 100) / 100;
 
-  const lendingInterest = cfLending > 0.01
-    ? Math.round(cfLending * (dailyRate / 100) * daysInCurrentFY * 100) / 100 : 0;
-  const borrowingInterest = cfBorrowing > 0.01
-    ? Math.round(cfBorrowing * (dailyRate / 100) * daysInCurrentFY * 100) / 100 : 0;
-
-  return {
-    lending: { amount: Math.round(cfLending * 100) / 100, interest: lendingInterest },
-    borrowing: { amount: Math.round(cfBorrowing * 100) / 100, interest: borrowingInterest },
-  };
+  return { side: currentEntry.side, amount: currentEntry.amount, interest };
 }

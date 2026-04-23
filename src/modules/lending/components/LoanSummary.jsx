@@ -1,10 +1,13 @@
 import { formatCurrency } from '../../../utils/formatUtils';
 
-export default function LoanSummary({ loans, summaries }) {
-  const totalPrincipal = summaries.reduce((sum, s) => sum + s.principal, 0);
-  const totalInterestTillFY = summaries.reduce((sum, s) => sum + s.interestTillFYEnd, 0);
-  const totalDue = summaries.reduce((sum, s) => sum + s.totalDue, 0);
-  const activeCount = loans.length;
+export default function LoanSummary({ loans, summaries, carryForward }) {
+  const cfAmount = carryForward?.amount || 0;
+  const cfInterest = carryForward?.interest || 0;
+  const cfCount = carryForward ? 1 : 0;
+  const totalPrincipal = summaries.reduce((sum, s) => sum + s.principal, 0) + cfAmount;
+  const totalInterestTillFY = summaries.reduce((sum, s) => sum + s.interestTillFYEnd, 0) + cfInterest;
+  const totalDue = summaries.reduce((sum, s) => sum + s.totalDue, 0) + cfAmount + cfInterest;
+  const activeCount = loans.length + cfCount;
 
   return (
     <div className="summary-grid">

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useCollection } from '../../../hooks/useFirestore';
 import { useCarryForward } from '../../../hooks/useCarryForward';
-import { getBorrowingSummary } from '../utils/lendingCalcs';
+import { getBorrowingSummary, getCurrentCarryForward } from '../utils/lendingCalcs';
 import { exportToExcel } from '../../../services/exportService';
 import { formatCurrency, formatPercent } from '../../../utils/formatUtils';
 import { formatDate, getCurrentFYLabel, toJSDate } from '../../../utils/dateUtils';
@@ -72,21 +72,25 @@ export default function BorrowingList() {
     return sorted;
   }, [sortedData]);
 
-  // Totals for current FY (includes carry-forward entries which have borrowDate in current FY)
+  // Totals for current FY. Excludes Firestore CF entries to avoid double-count;
+  // adds an in-memory carry-forward so read-only orgs (no CF docs) still show correct totals.
   const currentFYTotals = useMemo(() => {
     const currentFY = getCurrentFYLabel();
     const fyItems = sortedData.filter(item =>
+      !item.borrowing.isCarryForward &&
       getCurrentFYLabel(toJSDate(item.borrowing.borrowDate)) === currentFY
     );
     const fyBorrowings = fyItems.map(d => d.borrowing);
     const fySummaries = fyItems.map(d => d.summary);
+    const cf = getCurrentCarryForward(allLoans, allBorrowings);
+    const cfApplies = cf.side === 'borrowing' && cf.amount > 0;
     return {
-      count: fyBorrowings.length,
-      totalBorrowed: fyBorrowings.reduce((s, b) => s + b.amount, 0),
-      totalInterest: fySummaries.reduce((s, v) => s + v.interestTillFYEnd, 0),
-      totalCredit: fySummaries.reduce((s, v) => s + v.totalCredit, 0),
+      count: fyBorrowings.length + (cfApplies ? 1 : 0),
+      totalBorrowed: fyBorrowings.reduce((s, b) => s + b.amount, 0) + (cfApplies ? cf.amount : 0),
+      totalInterest: fySummaries.reduce((s, v) => s + v.interestTillFYEnd, 0) + (cfApplies ? cf.interest : 0),
+      totalCredit: fySummaries.reduce((s, v) => s + v.totalCredit, 0) + (cfApplies ? cf.amount + cf.interest : 0),
     };
-  }, [sortedData]);
+  }, [sortedData, allLoans, allBorrowings]);
 
   const handleSort = (col) => {
     if (sortCol === col) {

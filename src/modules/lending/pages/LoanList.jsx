@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useCollection } from '../../../hooks/useFirestore';
 import { useCarryForward } from '../../../hooks/useCarryForward';
-import { getLendingSummary } from '../utils/lendingCalcs';
+import { getLendingSummary, getCurrentCarryForward } from '../utils/lendingCalcs';
 import LoanSummary from '../components/LoanSummary';
 import LendingTabs from '../components/LendingTabs';
 import FYAccordion from '../components/FYAccordion';
@@ -76,16 +76,23 @@ export default function LoanList() {
     return sorted;
   }, [sortedData]);
 
-  // Summary for current FY (includes carry-forward entries which have loanDate in current FY)
+  // Summary for current FY. Excludes Firestore CF entries to avoid double-count;
+  // an in-memory carry-forward is folded in below for read-only orgs.
   const currentFYData = useMemo(() => {
     const currentFY = getCurrentFYLabel();
     return sortedData.filter(item =>
+      !item.loan.isCarryForward &&
       getCurrentFYLabel(toJSDate(item.loan.loanDate)) === currentFY
     );
   }, [sortedData]);
 
   const currentFYLoans = useMemo(() => currentFYData.map(d => d.loan), [currentFYData]);
   const currentFYSummaries = useMemo(() => currentFYData.map(d => d.summary), [currentFYData]);
+
+  const currentFYCarryForward = useMemo(() => {
+    const cf = getCurrentCarryForward(allLoans, allBorrowings);
+    return cf.side === 'lending' && cf.amount > 0 ? cf : null;
+  }, [allLoans, allBorrowings]);
 
   const handleSort = (col) => {
     if (sortCol === col) {
@@ -147,7 +154,7 @@ export default function LoanList() {
         </div>
       </div>
 
-      <LoanSummary loans={currentFYLoans} summaries={currentFYSummaries} />
+      <LoanSummary loans={currentFYLoans} summaries={currentFYSummaries} carryForward={currentFYCarryForward} />
 
       <RapidEntry type="lending" allLoans={allLoans} open={quickEntryOpen} onToggle={() => setQuickEntryOpen(prev => !prev)} />
 

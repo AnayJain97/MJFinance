@@ -1,43 +1,38 @@
-import { useEffect, useRef } from 'react';
-import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { useEffect, useMemo, useRef } from 'react';
+import { collection, query, where, getDocs, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../services/firebase';
-import { getCurrentFYLabel, getNextFYLabel, toJSDate, fyLabelToEndDate } from '../utils/dateUtils';
-import { calculateFYTotals } from '../modules/lending/utils/lendingCalcs';
+import { getNextFYLabel, toJSDate, fyLabelToEndDate } from '../utils/dateUtils';
+import { computeCarryForwardPlan } from '../modules/lending/utils/lendingCalcs';
 
 const CARRY_FORWARD_RATE = 0.8;
 
 /**
- * Find all carry-forward docs in a collection for a given org.
- * Returns array of { id, ...data } where isCarryForward === true.
- */
-async function getCarryForwardDocs(collectionPath) {
-  const q = query(
-    collection(db, collectionPath),
-    where('isCarryForward', '==', true)
-  );
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
-/**
- * Hook to auto-create/update carry-forward entries across FY boundaries.
+ * Hook to auto-create carry-forward entries across FY boundaries.
  *
- * For each FY transition found in the data, it:
- *   1. Calculates the net for that FY (including any carry-forward entries IN that FY)
- *   2. Creates/updates a carry-forward doc in the next FY
- *   3. Cascades through subsequent FYs
- *
- * @param {string} orgId - selected org (e.g. 'PB')
- * @param {Array} loans - all loans for this org
- * @param {Array} borrowings - all borrowings for this org
- * @param {boolean} canWrite - whether user has write access
+ * Idempotent and loop-safe:
+ *   - Re-runs only when non-CF inputs change (uses a stable signature, not array identity)
+ *   - Skips Firestore writes when existing CF docs already match the computed plan
  */
 export function useCarryForward(orgId, loans, borrowings, canWrite) {
   const processingRef = useRef(false);
 
+  // Stable signature derived from non-CF entries only.
+  // CF docs writing back through onSnapshot won't change this, so the effect won't loop.
+  const inputSignature = useMemo(() => {
+    const nonCfLoans = loans
+      .filter(l => !l.isCarryForward)
+      .map(l => `L:${l.id}:${l.principalAmount}:${toJSDate(l.loanDate).getTime()}:${l.monthlyInterestRate}:${l.endDate ? toJSDate(l.endDate).getTime() : ''}`)
+      .sort();
+    const nonCfBorrowings = borrowings
+      .filter(b => !b.isCarryForward)
+      .map(b => `B:${b.id}:${b.amount}:${toJSDate(b.borrowDate).getTime()}:${b.monthlyInterestRate}:${b.endDate ? toJSDate(b.endDate).getTime() : ''}`)
+      .sort();
+    return [...nonCfLoans, ...nonCfBorrowings].join('|');
+  }, [loans, borrowings]);
+
   useEffect(() => {
-    if (!orgId || !canWrite || processingRef.current) return;
-    if (!loans.length && !borrowings.length) return;
+    if (!orgId || !canWrite) return;
+    if (!inputSignature) return;
 
     const loansPath = `orgs/${orgId}/loans`;
     const borrowingsPath = `orgs/${orgId}/borrowings`;
@@ -47,108 +42,63 @@ export function useCarryForward(orgId, loans, borrowings, canWrite) {
       processingRef.current = true;
 
       try {
-        // Collect all FYs present in the data (excluding carry-forward entries to avoid circular)
-        const fySet = new Set();
-        loans.forEach(l => {
-          if (!l.isCarryForward) fySet.add(getCurrentFYLabel(toJSDate(l.loanDate)));
+        // Compute desired CF plan: one entry per previous FY (lending or borrowing side)
+        const plan = computeCarryForwardPlan(loans, borrowings);
+
+        // Read existing CF docs from both collections
+        const [existingLoanCFs, existingBorrowingCFs] = await Promise.all([
+          getDocs(query(collection(db, loansPath), where('isCarryForward', '==', true))),
+          getDocs(query(collection(db, borrowingsPath), where('isCarryForward', '==', true))),
+        ]);
+
+        const existingBySource = new Map(); // sourceFY -> { side, amount, id, path }
+        const stragglers = []; // duplicates to delete unconditionally
+        existingLoanCFs.docs.forEach(d => {
+          const data = d.data();
+          const entry = { side: 'lending', amount: data.principalAmount, id: d.id, path: loansPath };
+          if (existingBySource.has(data.sourceFY)) stragglers.push(entry);
+          else existingBySource.set(data.sourceFY, entry);
         });
-        borrowings.forEach(b => {
-          if (!b.isCarryForward) fySet.add(getCurrentFYLabel(toJSDate(b.borrowDate)));
+        existingBorrowingCFs.docs.forEach(d => {
+          const data = d.data();
+          const entry = { side: 'borrowing', amount: data.amount, id: d.id, path: borrowingsPath };
+          if (existingBySource.has(data.sourceFY)) stragglers.push(entry);
+          else existingBySource.set(data.sourceFY, entry);
         });
 
-        // Also include FYs from carry-forward entries' sourceFY
-        loans.filter(l => l.isCarryForward).forEach(l => fySet.add(l.sourceFY));
-        borrowings.filter(b => b.isCarryForward).forEach(b => fySet.add(b.sourceFY));
+        const planBySource = new Map();
+        plan.forEach(p => planBySource.set(p.sourceFY, p));
 
-        const sortedFYs = [...fySet].sort(); // chronological
-        if (sortedFYs.length === 0) return;
-
-        const currentFY = getCurrentFYLabel();
-
-        // Fill in all intermediate FYs up to (but not including) current FY
-        const firstFY = sortedFYs[0];
-        const allFYs = [firstFY];
-        let fy = firstFY;
-        while (fy < currentFY) {
-          fy = getNextFYLabel(fy);
-          if (fy <= currentFY && !allFYs.includes(fy)) {
-            allFYs.push(fy);
-          }
+        // Delete duplicates first
+        for (const s of stragglers) {
+          await deleteDoc(doc(db, s.path, s.id));
         }
-        // Remove current FY — we only create carry-forwards INTO current FY, not from it
-        const fysToProcess = allFYs.filter(f => f < currentFY);
 
-        // Get existing carry-forward docs
-        const existingLoanCFs = await getCarryForwardDocs(loansPath);
-        const existingBorrowingCFs = await getCarryForwardDocs(borrowingsPath);
-
-        // Deduplicate: if multiple carry-forward docs share the same sourceFY
-        // in the same collection, delete the extras (keep only the first)
-        const loanCFMap = {};
-        for (const cf of existingLoanCFs) {
-          if (loanCFMap[cf.sourceFY]) {
-            await deleteDoc(doc(db, loansPath, cf.id));
-          } else {
-            loanCFMap[cf.sourceFY] = cf;
-          }
-        }
-        const borrowingCFMap = {};
-        for (const cf of existingBorrowingCFs) {
-          if (borrowingCFMap[cf.sourceFY]) {
-            await deleteDoc(doc(db, borrowingsPath, cf.id));
-          } else {
-            borrowingCFMap[cf.sourceFY] = cf;
+        // Delete existing CF docs that don't match the plan (or aren't in plan at all)
+        for (const [sourceFY, existing] of existingBySource.entries()) {
+          const desired = planBySource.get(sourceFY);
+          const matches = desired
+            && desired.side === existing.side
+            && Math.abs(desired.amount - existing.amount) < 0.01;
+          if (!matches) {
+            await deleteDoc(doc(db, existing.path, existing.id));
           }
         }
 
-        // Process each FY in chronological order, tracking carry-forward amounts
-        // separately for lending and borrowing so both pages show correct totals
-        let pendingLendingCF = 0;
-        let pendingBorrowingCF = 0;
+        // Add CF docs for plan entries that don't have a matching existing doc
+        for (const p of plan) {
+          const existing = existingBySource.get(p.sourceFY);
+          const matches = existing
+            && existing.side === p.side
+            && Math.abs(existing.amount - p.amount) < 0.01;
+          if (matches) continue;
 
-        for (const fy of fysToProcess) {
-          const nextFY = getNextFYLabel(fy);
-          if (nextFY > currentFY) continue;
-
-          // Calculate separate lending and borrowing totals for this FY
-          const { totalLendingDue, totalBorrowingCredit } = calculateFYTotals(loans, borrowings, fy);
-
-          // Add any pending carry-forward from previous iteration (cascade)
-          const lendingTotal = totalLendingDue + pendingLendingCF;
-          const borrowingTotal = totalBorrowingCredit + pendingBorrowingCF;
-
+          const path = p.side === 'lending' ? loansPath : borrowingsPath;
+          const nextFY = getNextFYLabel(p.sourceFY);
           const fyEnd = fyLabelToEndDate(nextFY);
-          const fyStartDate = new Date(parseInt(nextFY.split('-')[0], 10), 3, 1);
-          const daysInFY = Math.ceil((fyEnd.getTime() - fyStartDate.getTime()) / (1000 * 60 * 60 * 24));
-          const dailyRate = CARRY_FORWARD_RATE / 30;
-
-          // Process lending carry-forward
-          const lendingAmount = Math.round(lendingTotal * 100) / 100;
-          if (lendingAmount > 0.01) {
-            const interest = lendingAmount * (dailyRate / 100) * daysInFY;
-            pendingLendingCF = Math.round((lendingAmount + interest) * 100) / 100;
-            await upsertCarryForward(loanCFMap, fy, lendingAmount, true, fyStartDate, fyEnd, loansPath);
-          } else {
-            pendingLendingCF = 0;
-            if (loanCFMap[fy]) {
-              await deleteDoc(doc(db, loansPath, loanCFMap[fy].id));
-              delete loanCFMap[fy];
-            }
-          }
-
-          // Process borrowing carry-forward
-          const borrowingAmount = Math.round(borrowingTotal * 100) / 100;
-          if (borrowingAmount > 0.01) {
-            const interest = borrowingAmount * (dailyRate / 100) * daysInFY;
-            pendingBorrowingCF = Math.round((borrowingAmount + interest) * 100) / 100;
-            await upsertCarryForward(borrowingCFMap, fy, borrowingAmount, false, fyStartDate, fyEnd, borrowingsPath);
-          } else {
-            pendingBorrowingCF = 0;
-            if (borrowingCFMap[fy]) {
-              await deleteDoc(doc(db, borrowingsPath, borrowingCFMap[fy].id));
-              delete borrowingCFMap[fy];
-            }
-          }
+          const fyStart = new Date(parseInt(nextFY.split('-')[0], 10), 3, 1);
+          const newData = buildCarryForwardDoc(p.sourceFY, p.amount, p.side === 'lending', fyStart, fyEnd);
+          await addDoc(collection(db, path), newData);
         }
       } catch (err) {
         console.error('Carry-forward processing error:', err);
@@ -158,27 +108,7 @@ export function useCarryForward(orgId, loans, borrowings, canWrite) {
     }
 
     processCarryForwards();
-  }, [orgId, loans, borrowings, canWrite]);
-}
-
-/**
- * Create or update a carry-forward document.
- */
-async function upsertCarryForward(cfMap, sourceFY, amount, isLending, startDate, endDate, collectionPath) {
-  const existing = cfMap[sourceFY];
-  if (existing) {
-    const existingAmount = isLending ? existing.principalAmount : existing.amount;
-    if (Math.abs(existingAmount - amount) > 0.01) {
-      const updateData = isLending
-        ? { principalAmount: amount, updatedAt: serverTimestamp() }
-        : { amount: amount, updatedAt: serverTimestamp() };
-      await updateDoc(doc(db, collectionPath, existing.id), updateData);
-    }
-  } else {
-    const newData = buildCarryForwardDoc(sourceFY, amount, isLending, startDate, endDate);
-    const newDoc = await addDoc(collection(db, collectionPath), newData);
-    cfMap[sourceFY] = { id: newDoc.id, ...newData };
-  }
+  }, [orgId, inputSignature, canWrite]);
 }
 
 function buildCarryForwardDoc(sourceFY, amount, isLending, startDate, endDate) {
