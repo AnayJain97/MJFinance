@@ -486,6 +486,31 @@ td { padding: 0.75rem 1rem; border-top: 1px solid #f0f0f0; font-size: 0.95rem; }
 .fy-content { padding: 0; }
 .fy-content .table-wrap { box-shadow: none; border-radius: 0; }
 
+/* Mobile: header bar can't fit title + 3 action buttons in a single row.
+   Stack the actions onto a second line so nothing is clipped, and let each
+   button shrink-fit so the row remains tappable. */
+@media (max-width: 640px) {
+  .fy-header-bar {
+    flex-wrap: wrap;
+  }
+  .fy-header-bar > .fy-header {
+    flex: 1 1 100%;
+  }
+  .fy-header-actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    padding: 0.5rem 0.75rem 0.65rem;
+    border-top: 1px solid #eef0f4;
+    background: #fafbfc;
+  }
+  .fy-section-locked .fy-header-actions { background: #f1f1f3; border-top-color: #e6e6e6; }
+  .fy-header-actions .btn-sm {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+}
+
 /* === Carry-Forward Row === */
 tr.carry-forward-row { background: #f0f4ff; }
 tr.carry-forward-row:hover td { background: #e8eeff; }
