@@ -20,8 +20,15 @@ export function useLocks(orgId) {
     const locks = {};
     const lockedFYs = new Set();
     lockDocs.forEach(d => {
-      locks[d.fyLabel || d.id] = d;
-      if (d.isLocked) lockedFYs.add(d.fyLabel || d.id);
+      // The doc id IS the fyLabel (we write them deterministically), but we
+      // still require the explicit fyLabel field so a partial/legacy write
+      // can't silently create a key like "cf-2024-25" that desyncs lock state.
+      if (!d.fyLabel || typeof d.fyLabel !== 'string') {
+        console.warn('useLocks: lock doc missing fyLabel field, ignoring:', d.id);
+        return;
+      }
+      locks[d.fyLabel] = d;
+      if (d.isLocked) lockedFYs.add(d.fyLabel);
     });
 
     const sortedLocked = [...lockedFYs].sort();

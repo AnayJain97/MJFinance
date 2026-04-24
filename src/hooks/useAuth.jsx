@@ -23,17 +23,38 @@ export function AuthProvider({ children }) {
   const [userRoles, setUserRoles] = useState(null);
   const [userDisplayName, setUserDisplayName] = useState('');
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
 
   useEffect(() => {
     let unsubRoles = null;
+    let unsubAuth = null;
+    let cancelled = false;
 
-    setPersistence(auth, browserSessionPersistence).then(() => {
-      const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+    async function bootstrap() {
+      try {
+        await setPersistence(auth, browserSessionPersistence);
+      } catch (err) {
+        // Common in private-mode browsers / storage-disabled environments.
+        // Fail open so the app doesn't hang on the splash screen — the user
+        // just won't get session persistence.
+        console.warn('setPersistence failed, continuing without session persistence:', err);
+      }
+
+      if (cancelled) return;
+
+      unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
         if (unsubRoles) { unsubRoles(); unsubRoles = null; }
 
-        if (firebaseUser) {
-          setUser(firebaseUser);
+        if (!firebaseUser) {
+          setUser(null);
+          setUserRoles(null);
+          setLoading(false);
+          return;
+        }
 
+        setUser(firebaseUser);
+
+        try {
           const userRef = doc(db, 'users', firebaseUser.uid);
           const userSnap = await getDoc(userRef);
           if (!userSnap.exists()) {
@@ -45,24 +66,43 @@ export function AuthProvider({ children }) {
             });
           }
 
-          unsubRoles = onSnapshot(userRef, (snap) => {
-            const data = snap.data();
-            setUserRoles(data?.orgs || {});
-            setUserDisplayName(data?.displayName || emailToUsername(firebaseUser.email));
-            setLoading(false);
-          });
-        } else {
-          setUser(null);
-          setUserRoles(null);
+          unsubRoles = onSnapshot(userRef,
+            (snap) => {
+              const data = snap.data();
+              setUserRoles(data?.orgs || {});
+              setUserDisplayName(data?.displayName || emailToUsername(firebaseUser.email));
+              setLoading(false);
+            },
+            (err) => {
+              console.error('User profile snapshot error:', err);
+              setAuthError(err?.message || 'Failed to load your profile');
+              setUserRoles({});
+              setLoading(false);
+            }
+          );
+        } catch (err) {
+          // getDoc/setDoc bootstrap failure — surface to UI so the user isn't
+          // stuck on the loading screen.
+          console.error('User profile bootstrap failed:', err);
+          setAuthError(err?.message || 'Failed to load your profile');
+          setUserRoles({});
           setLoading(false);
         }
+      },
+      (err) => {
+        console.error('onAuthStateChanged error:', err);
+        setAuthError(err?.message || 'Authentication error');
+        setLoading(false);
       });
+    }
 
-      return () => {
-        unsubAuth();
-        if (unsubRoles) unsubRoles();
-      };
-    });
+    bootstrap();
+
+    return () => {
+      cancelled = true;
+      if (unsubAuth) unsubAuth();
+      if (unsubRoles) unsubRoles();
+    };
   }, []);
 
   const signIn = async (username, password) => {
@@ -79,7 +119,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, userRoles, userDisplayName, signIn, signOut, changePassword }}>
+    <AuthContext.Provider value={{ user, loading, authError, userRoles, userDisplayName, signIn, signOut, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

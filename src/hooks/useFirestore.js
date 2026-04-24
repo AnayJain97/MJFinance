@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc,
-  query, orderBy, serverTimestamp
+  serverTimestamp
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { db, auth } from '../services/firebase';
@@ -36,13 +36,21 @@ export function useCollection(collectionPath) {
         return;
       }
 
-      const q = query(
-        collection(db, collectionPath),
-        orderBy('createdAt', 'desc')
-      );
+      const q = collection(db, collectionPath);
+      // No orderBy here: a Firestore orderBy on a missing field silently
+      // filters out docs without that field (we hit this with locks). Callers
+      // sort by their own criteria (date, client name, etc.).
       unsubFirestore = onSnapshot(q,
         (snapshot) => {
           const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          // Stable client-side sort: newest createdAt first, falling back to
+          // doc id for docs missing the field.
+          docs.sort((a, b) => {
+            const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+            const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+            if (ta !== tb) return tb - ta;
+            return (b.id || '').localeCompare(a.id || '');
+          });
           setData(docs);
           setLoading(false);
         },
@@ -116,12 +124,17 @@ export function useDocument(docPath) {
 
 /**
  * Add a document to a Firestore collection. Returns { id }.
+ * Throws if the user is not authenticated (rather than silently failing inside
+ * Firebase with a permission error and leaving the caller none the wiser).
  */
 export async function addDocument(collectionPath, data) {
+  if (!auth.currentUser) {
+    throw new Error('Not authenticated. Please sign in again.');
+  }
   const docRef = await addDoc(collection(db, collectionPath), {
     ...data,
     createdAt: serverTimestamp(),
-    createdBy: auth.currentUser?.email || '',
+    createdBy: auth.currentUser.email || '',
   });
   return { id: docRef.id };
 }
@@ -130,10 +143,13 @@ export async function addDocument(collectionPath, data) {
  * Update a Firestore document.
  */
 export async function updateDocument(docPath, data) {
+  if (!auth.currentUser) {
+    throw new Error('Not authenticated. Please sign in again.');
+  }
   await updateDoc(doc(db, docPath), {
     ...data,
     updatedAt: serverTimestamp(),
-    modifiedBy: auth.currentUser?.email || '',
+    modifiedBy: auth.currentUser.email || '',
   });
 }
 
@@ -141,5 +157,8 @@ export async function updateDocument(docPath, data) {
  * Delete a Firestore document.
  */
 export async function deleteDocument(docPath) {
+  if (!auth.currentUser) {
+    throw new Error('Not authenticated. Please sign in again.');
+  }
   await deleteDoc(doc(db, docPath));
 }

@@ -6,15 +6,23 @@ body {
   color: #1a1a2e;
   background: #f0f2f5;
   line-height: 1.5;
+  /* Prevent iOS Safari from auto-zooming when an input is focused (font-size >= 16px on inputs handles this; we also set on body for inherit). */
+  -webkit-text-size-adjust: 100%;
 }
 a { color: inherit; text-decoration: none; }
 ul { list-style: none; }
 input, select, textarea, button { font: inherit; }
+/* Eliminate the 300ms double-tap delay that mobile browsers add to interactive
+   elements — this was causing accordion headers / dropdowns to appear to need
+   multiple taps before they responded. */
+button, a, [role="button"], select, summary { touch-action: manipulation; }
 
 /* === Loading Screen === */
 .loading-screen {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  height: 100vh; gap: 1rem;
+  height: 100vh;
+  height: 100dvh; /* dynamic viewport height — stable when mobile address bar hides/shows */
+  gap: 1rem;
 }
 .spinner {
   width: 36px; height: 36px; border: 3px solid #e0e0e0;
@@ -26,7 +34,9 @@ input, select, textarea, button { font: inherit; }
 /* === Login Page === */
 .login-page {
   display: flex; align-items: center; justify-content: center;
-  height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  height: 100vh;
+  height: 100dvh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 .login-card {
   background: #fff; border-radius: 12px; padding: 3rem 2.5rem;
@@ -42,17 +52,22 @@ input, select, textarea, button { font: inherit; }
   padding: 0.6rem 1.2rem; border: none; border-radius: 8px;
   cursor: pointer; font-weight: 500; transition: all 0.15s;
 }
-.btn:hover { transform: translateY(-1px); }
+/* Only apply hover transforms / colour shifts on devices that actually have a
+   real hover state. On touch screens these "stuck" after a tap and could leave
+   buttons looking pressed or shift surrounding layout. */
+@media (hover: hover) {
+  .btn:hover { transform: translateY(-1px); }
+  .btn-primary:hover { background: #3a56d4; }
+  .btn-success:hover { background: #25a99d; }
+  .btn-danger:hover { background: #cc313d; }
+  .btn-outline:hover { background: #f5f5f5; }
+}
 .btn-primary { background: #4361ee; color: #fff; }
-.btn-primary:hover { background: #3a56d4; }
 .btn-success { background: #2ec4b6; color: #fff; }
-.btn-success:hover { background: #25a99d; }
 .btn-danger { background: #e63946; color: #fff; }
-.btn-danger:hover { background: #cc313d; }
 .btn-outline {
   background: transparent; border: 1px solid #ccc; color: #555;
 }
-.btn-outline:hover { background: #f5f5f5; }
 .btn-sm { padding: 0.35rem 0.75rem; font-size: 0.85rem; }
 /* === Login Form === */
 .login-form {
@@ -84,11 +99,25 @@ input, select, textarea, button { font: inherit; }
 }
 .btn-locked:hover { transform: none; }
 
+.locked-empty-row {
+  padding: 1rem 1.25rem;
+  font-size: 0.9rem;
+  color: #6a6a6a;
+  font-style: italic;
+  text-align: center;
+  background: #fafafa;
+}
+
 /* === App Layout === */
-.app-layout { display: flex; height: 100vh; overflow: hidden; }
+.app-layout {
+  display: flex;
+  height: 100vh;
+  height: 100dvh; /* dynamic viewport height — prevents address-bar resize from clipping content */
+  overflow: hidden;
+}
 
 /* Main area */
-.main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 .topbar {
   height: 56px; background: #fff; border-bottom: 1px solid #e0e0e0;
   display: flex; align-items: center; padding: 0 1.25rem; gap: 0.75rem;
@@ -111,7 +140,16 @@ input, select, textarea, button { font: inherit; }
 .org-dropdown:focus { background-color: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.7); box-shadow: 0 0 0 2px rgba(255,255,255,0.15); }
 .org-dropdown option { color: #333; background: #fff; font-weight: 600; text-transform: uppercase; }
 .user-name { font-size: 0.9rem; color: #555; }
-.main-content { flex: 1; overflow-y: auto; padding: 1.5rem; }
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  /* Smooth momentum scrolling on iOS, prevent the body from also scrolling
+     (rubber-band effect that on some Android Chrome builds caused content to
+     paint blank while the address bar animated). */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
 
 /* === Cards & Panels === */
 .card {
@@ -145,9 +183,11 @@ thead { background: #f8f9fa; }
 th { text-align: left; padding: 0.75rem 1rem; font-size: 0.8rem; text-transform: uppercase; color: #888; letter-spacing: 0.5px; font-weight: 600; white-space: nowrap; }
 th.sortable { cursor: pointer; user-select: none; }
 th.sortable:hover { color: #4361ee; }
+@media (hover: hover) {
+  tr:hover td { background: #fafbfc; }
+}
 th .sort-arrow { font-size: 0.7rem; margin-left: 3px; }
 td { padding: 0.75rem 1rem; border-top: 1px solid #f0f0f0; font-size: 0.95rem; }
-tr:hover td { background: #fafbfc; }
 .text-right { text-align: right; }
 
 /* Delete icon button in rows */
@@ -319,6 +359,16 @@ tr:hover td { background: #fafbfc; }
   .summary-grid { grid-template-columns: 1fr; }
 }
 
+/* Mobile: prevent iOS Safari from auto-zooming when an input is focused.
+   Auto-zoom triggers when input/select/textarea font-size < 16px, and the
+   resulting viewport jump can leave parts of the page rendered as a blank
+   rectangle until the user scrolls or rotates. */
+@media (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px;
+  }
+}
+
 /* Lending module tabs */
 .lending-tabs {
   display: flex;
@@ -361,6 +411,12 @@ tr:hover td { background: #fafbfc; }
   overflow: hidden;
   background: #fff;
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  /* Force the section into its own compositor layer. Works around a Chrome
+     Android repaint bug where conditionally-mounted children (the .fy-content
+     panel) inside an `overflow: hidden` ancestor would render as a blank
+     rectangle until the user scrolled. */
+  transform: translateZ(0);
+  contain: layout paint;
 }
 .fy-section-current { box-shadow: 0 2px 12px rgba(67,97,238,0.12); }
 .fy-section-locked { background: #f7f7f8; }
@@ -391,6 +447,14 @@ tr:hover td { background: #fafbfc; }
   letter-spacing: 0.3px;
 }
 
+.fy-badge-archived {
+  margin-left: 0.5rem;
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  background: #b02a37; color: #fff;
+  padding: 0.15rem 0.5rem; border-radius: 10px;
+  letter-spacing: 0.3px;
+}
+
 .fy-header {
   display: flex; align-items: center; gap: 0.6rem;
   width: 100%; padding: 0.75rem 1rem;
@@ -398,8 +462,13 @@ tr:hover td { background: #fafbfc; }
   font-size: 0.9rem; font-weight: 600; color: #333;
   transition: background 0.15s;
   text-align: left;
+  /* Suppress the iOS / Android tap highlight rectangle which sometimes
+     overlapped the header label and looked like the row had "frozen". */
+  -webkit-tap-highlight-color: transparent;
 }
-.fy-header:hover { background: #eef0f4; }
+@media (hover: hover) {
+  .fy-header:hover { background: #eef0f4; }
+}
 .fy-header-open { background: #eef0f4; }
 
 .fy-header-arrow { font-size: 0.7rem; color: #888; width: 1rem; text-align: center; }

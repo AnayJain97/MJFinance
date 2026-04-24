@@ -62,6 +62,11 @@ export function getLendingSummary(loan) {
   const principal = loan.principalAmount;
   const loanDate = toJSDate(loan.loanDate);
   const endDate = loan.endDate ? toJSDate(loan.endDate) : null;
+  if (!loanDate) {
+    // Defensive: corrupt entry without a usable date. Return zero summary so
+    // the row renders but doesn't poison aggregate totals with NaN.
+    return { principal: principal || 0, monthlyInterest: 0, daysTillFYEnd: 0, interestTillFYEnd: 0, totalDue: principal || 0, formulaText: 'Missing loan date' };
+  }
   const monthlyInterest = calcMonthlyInterest(principal, loan.monthlyInterestRate);
   const daysTillEnd = getDaysTillEnd(loanDate, endDate);
   const interestTillFYEnd = Math.round(calcInterestTillFYEnd(principal, loan.monthlyInterestRate, loanDate, endDate) * 100) / 100;
@@ -79,6 +84,9 @@ export function getBorrowingSummary(borrowing) {
   const amount = borrowing.amount;
   const borrowDate = toJSDate(borrowing.borrowDate);
   const endDate = borrowing.endDate ? toJSDate(borrowing.endDate) : null;
+  if (!borrowDate) {
+    return { amount: amount || 0, monthlyInterest: 0, daysTillFYEnd: 0, interestTillFYEnd: 0, totalCredit: amount || 0, formulaText: 'Missing borrow date' };
+  }
   const monthlyInterest = calcMonthlyInterest(amount, borrowing.monthlyInterestRate);
   const daysTillEnd = getDaysTillEnd(borrowDate, endDate);
   const interestTillFYEnd = Math.round(calcInterestTillFYEnd(amount, borrowing.monthlyInterestRate, borrowDate, endDate) * 100) / 100;
@@ -189,14 +197,23 @@ const CF_RATE = 0.8;
  * that should be carried into the next FY, with cascading compound interest.
  * Returns an array of { sourceFY, side: 'lending'|'borrowing', amount }.
  *
- * Used by useCarryForward to write CF docs to Firestore. Pure function.
+ * Pure function. For locked FYs, uses the frozen CF stored on the lock doc
+ * (locks[fy].cfSide / locks[fy].cfAmount) instead of recomputing from data.
+ * This lets us safely delete a locked FY's data without losing its carry-forward.
+ *
+ * @param locks  Optional map { [fyLabel]: { isLocked, cfSide, cfAmount, ... } }
  */
-export function computeCarryForwardPlan(loans, borrowings) {
+export function computeCarryForwardPlan(loans, borrowings, locks = {}) {
   const currentFY = getCurrentFYLabel();
 
   const fySet = new Set();
   loans.filter(l => !l.isCarryForward).forEach(l => fySet.add(getCurrentFYLabel(toJSDate(l.loanDate))));
   borrowings.filter(b => !b.isCarryForward).forEach(b => fySet.add(getCurrentFYLabel(toJSDate(b.borrowDate))));
+
+  // Locked FYs must contribute to the cascade even if their data has been deleted
+  Object.entries(locks).forEach(([fy, lock]) => {
+    if (lock?.isLocked && fy < currentFY) fySet.add(fy);
+  });
 
   const sortedFYs = [...fySet].filter(fy => fy < currentFY).sort();
   if (sortedFYs.length === 0) return [];
@@ -213,16 +230,50 @@ export function computeCarryForwardPlan(loans, borrowings) {
 
   for (const sourceFY of allPreviousFYs) {
     const nextFY = getNextFYLabel(sourceFY);
-    const { totalLendingDue, totalBorrowingCredit } = calculateFYTotals(loans, borrowings, sourceFY);
-    const net = (totalLendingDue - totalBorrowingCredit) + pendingNet;
+    const lock = locks[sourceFY];
 
-    if (Math.abs(net) < 0.01) {
-      pendingNet = 0;
-      continue;
+    let absAmount;
+    let isLending;
+
+    if (lock?.isLocked) {
+      // For locked FYs always use the frozen state — never fall back to data
+      // (which may have been deleted post-lock and would otherwise produce
+      // incorrect zeros). Defensively handle every malformed lock-doc shape.
+      const rawAmount = Number(lock.cfAmount);
+      if (lock.cfAmount == null || !Number.isFinite(rawAmount)) {
+        // No / invalid amount → treat as zero net for this FY.
+        if (lock.cfAmount != null) {
+          console.error(`computeCarryForwardPlan: lock for FY ${sourceFY} has non-numeric cfAmount`, lock);
+        }
+        pendingNet = 0;
+        continue;
+      }
+      const rawAbs = Math.abs(rawAmount);
+      if (rawAbs < 0.01) {
+        // Frozen zero net — no CF needed for this FY.
+        pendingNet = 0;
+        continue;
+      }
+      if (lock.cfSide !== 'lending' && lock.cfSide !== 'borrowing') {
+        // Have an amount but no/invalid side — corrupt lock doc. Skip safely
+        // rather than guessing a side and writing wrong data downstream.
+        console.error(`computeCarryForwardPlan: lock for FY ${sourceFY} has cfAmount but missing/invalid cfSide`, lock);
+        pendingNet = 0;
+        continue;
+      }
+      absAmount = Math.round(rawAbs * 100) / 100;
+      isLending = lock.cfSide === 'lending';
+    } else {
+      // Compute from raw data
+      const { totalLendingDue, totalBorrowingCredit } = calculateFYTotals(loans, borrowings, sourceFY);
+      const net = (totalLendingDue - totalBorrowingCredit) + pendingNet;
+      if (Math.abs(net) < 0.01) {
+        pendingNet = 0;
+        continue;
+      }
+      isLending = net > 0;
+      absAmount = Math.round(Math.abs(net) * 100) / 100;
     }
-
-    const isLending = net > 0;
-    const absAmount = Math.round(Math.abs(net) * 100) / 100;
 
     plan.push({ sourceFY, side: isLending ? 'lending' : 'borrowing', amount: absAmount });
 
@@ -247,8 +298,8 @@ export function computeCarryForwardPlan(loans, borrowings) {
  *   - amount: principal entering current FY
  *   - interest: interest accrued on it through the current FY (to March 31)
  */
-export function getCurrentCarryForward(loans, borrowings) {
-  const plan = computeCarryForwardPlan(loans, borrowings);
+export function getCurrentCarryForward(loans, borrowings, locks = {}) {
+  const plan = computeCarryForwardPlan(loans, borrowings, locks);
   if (plan.length === 0) return { side: null, amount: 0, interest: 0 };
 
   const currentFY = getCurrentFYLabel();

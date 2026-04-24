@@ -46,6 +46,9 @@ export default function FYAccordion({ groupedData, renderSection, renderHeaderAc
         const isOpen = expanded.has(fy);
         const isCurrent = fy === currentFY;
         const locked = isFYLocked ? isFYLocked(fy) : false;
+        // A locked FY whose data has been wiped via Delete-All is rendered as "Archived"
+        // (locked + deleted), not "Locked" — there's nothing left to unlock.
+        const archived = locked && items.length === 0;
 
         return (
           <div
@@ -62,7 +65,9 @@ export default function FYAccordion({ groupedData, renderSection, renderHeaderAc
                 <span className="fy-header-label">FY {fy}</span>
                 <span className="fy-header-count">{items.length} {items.length === 1 ? 'entry' : 'entries'}</span>
                 {isCurrent && <span className="fy-badge-current">Current</span>}
-                {locked && <span className="fy-badge-locked" title="Locked">🔒 Locked</span>}
+                {archived
+                  ? <span className="fy-badge-archived" title="Locked and data deleted">🗑️ Deleted</span>
+                  : (locked && <span className="fy-badge-locked" title="Locked">🔒 Locked</span>)}
               </button>
               {renderHeaderActions && (
                 <div className="fy-header-actions" onClick={e => e.stopPropagation()}>

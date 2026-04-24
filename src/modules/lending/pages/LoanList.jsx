@@ -13,6 +13,7 @@ import { formatDate, getCurrentFYLabel, toJSDate } from '../../../utils/dateUtil
 import Tooltip from '../../../components/Tooltip';
 import Toast from '../../../components/Toast';
 import RapidEntry from '../components/RapidEntry';
+import ErrorBanner from '../../../components/ErrorBanner';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function LoanList() {
@@ -23,12 +24,12 @@ export default function LoanList() {
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const { selectedOrg, canWrite } = useOrg();
 
-  const { data: allLoans, loading } = useCollection(getOrgCollection(selectedOrg, 'loans'));
-  const { data: allBorrowings, loading: loadingBorrowings } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
-  const { isLocked } = useLocks(selectedOrg);
+  const { data: allLoans, loading, error: loansError } = useCollection(getOrgCollection(selectedOrg, 'loans'));
+  const { data: allBorrowings, loading: loadingBorrowings, error: borrowingsError } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
+  const { isLocked, locks } = useLocks(selectedOrg);
 
   // Auto-create/update carry-forward entries (only when both collections are loaded)
-  useCarryForward(selectedOrg, allLoans, allBorrowings, canWrite && !loading && !loadingBorrowings);
+  useCarryForward(selectedOrg, allLoans, allBorrowings, canWrite && !loading && !loadingBorrowings, locks);
 
   const filteredLoans = useMemo(() => {
     let loans = allLoans;
@@ -64,7 +65,8 @@ export default function LoanList() {
     return combined;
   }, [filteredLoans, summaries, sortCol, sortDir]);
 
-  // Group sorted data by FY for accordion display
+  // Group sorted data by FY for accordion display.
+  // Always include locked FYs even if data was deleted post-lock so the section stays visible.
   const fyGroupedData = useMemo(() => {
     const grouped = {};
     sortedData.forEach(item => {
@@ -72,11 +74,13 @@ export default function LoanList() {
       if (!grouped[fy]) grouped[fy] = [];
       grouped[fy].push(item);
     });
-    // Sort keys descending
+    Object.entries(locks).forEach(([fy, lock]) => {
+      if (lock?.isLocked && !grouped[fy]) grouped[fy] = [];
+    });
     const sorted = {};
     Object.keys(grouped).sort((a, b) => b.localeCompare(a)).forEach(k => { sorted[k] = grouped[k]; });
     return sorted;
-  }, [sortedData]);
+  }, [sortedData, locks]);
 
   // Summary for current FY. Excludes Firestore CF entries to avoid double-count;
   // an in-memory carry-forward is folded in below for read-only orgs.
@@ -92,9 +96,9 @@ export default function LoanList() {
   const currentFYSummaries = useMemo(() => currentFYData.map(d => d.summary), [currentFYData]);
 
   const currentFYCarryForward = useMemo(() => {
-    const cf = getCurrentCarryForward(allLoans, allBorrowings);
+    const cf = getCurrentCarryForward(allLoans, allBorrowings, locks);
     return cf.side === 'lending' && cf.amount > 0 ? cf : null;
-  }, [allLoans, allBorrowings]);
+  }, [allLoans, allBorrowings, locks]);
 
   const handleSort = (col) => {
     if (sortCol === col) {
@@ -131,7 +135,12 @@ export default function LoanList() {
       { header: 'Rate/Mo', key: 'rate', width: 10, noTotal: true },
     ];
 
-    exportToExcel(rows, cols, `Loans FY ${fyLabel}`, `${selectedOrg}_Loans_${fyLabel}`);
+    try {
+      exportToExcel(rows, cols, `Loans FY ${fyLabel}`, `${selectedOrg}_Loans_${fyLabel}`);
+    } catch (err) {
+      console.error('Loan export failed:', err);
+      setToast({ message: `Export failed: ${err?.message || 'unknown error'}`, type: 'error' });
+    }
   };
 
   if (loading) {
@@ -141,6 +150,11 @@ export default function LoanList() {
   return (
     <div>
       <LendingTabs />
+
+      <ErrorBanner
+        message={loansError ? `Failed to load lending data: ${loansError.message || 'permission denied or network error'}` : (borrowingsError ? `Failed to load borrowing data: ${borrowingsError.message || 'permission denied or network error'}` : null)}
+        onRetry={() => window.location.reload()}
+      />
 
       <div className="page-header">
         <h1>Money Lent Out — FY {getCurrentFYLabel()}</h1>
@@ -178,15 +192,25 @@ export default function LoanList() {
           emptyMessage="No loans found."
           isFYLocked={isLocked}
           renderHeaderActions={(fy, items) => (
-            <button
-              className="btn btn-sm btn-export"
-              onClick={() => handleExport(fy, items)}
-              title={`Export FY ${fy}`}
-            >
-              📥 Export
-            </button>
+            // Hide Export entirely for locked + emptied FYs (post Delete-All) —
+            // there's nothing to export and the section just shows the archived placeholder.
+            isLocked(fy) && items.length === 0 ? null : (
+              <button
+                className="btn btn-sm btn-export"
+                onClick={() => handleExport(fy, items)}
+                disabled={items.length === 0}
+                title={items.length === 0 ? 'No data to export' : `Export FY ${fy}`}
+              >
+                📥 Export
+              </button>
+            )
           )}
           renderSection={(fy, items) => (
+            items.length === 0 ? (
+              <div className="locked-empty-row">
+                Transactions for FY {fy} have been finalized, locked, and archived. No entries to display.
+              </div>
+            ) : (
             <div className="table-wrap">
               <table>
                 <thead>
@@ -225,6 +249,7 @@ export default function LoanList() {
                 </tbody>
               </table>
             </div>
+            )
           )}
         />
       )}

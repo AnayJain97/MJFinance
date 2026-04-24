@@ -12,10 +12,37 @@ service cloud.firestore {
 
     // Org-scoped data
     match /orgs/{orgId}/{collection}/{docId} {
-      allow read: if request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgs[orgId] in ['read', 'write'];
-      allow write: if request.auth != null
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgs[orgId] == 'write';
+      function userRole() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.orgs[orgId];
+      }
+
+      // Returns true if a lock doc exists for the given fyLabel and isLocked == true.
+      // Used to enforce per-FY write locking server-side so concurrent tabs / direct
+      // writes can't bypass the client-side block.
+      function fyIsLocked(fyLabel) {
+        return exists(/databases/$(database)/documents/orgs/$(orgId)/locks/$(fyLabel))
+          && get(/databases/$(database)/documents/orgs/$(orgId)/locks/$(fyLabel)).data.isLocked == true;
+      }
+
+      allow read: if request.auth != null && userRole() in ['read', 'write'];
+
+      // Create: writer role required. For non-lock docs, if fyLabel is set the
+      // FY must not be locked. Legacy docs without fyLabel are not blocked
+      // (those predate the lock feature; the client now always writes fyLabel).
+      allow create: if request.auth != null && userRole() == 'write'
+        && (collection == 'locks'
+            || !('fyLabel' in request.resource.data)
+            || !fyIsLocked(request.resource.data.fyLabel));
+
+      // Update: same lock check, against the existing doc's fyLabel.
+      allow update: if request.auth != null && userRole() == 'write'
+        && (collection == 'locks'
+            || !('fyLabel' in resource.data)
+            || !fyIsLocked(resource.data.fyLabel));
+
+      // Delete: writer role only. Allowed even on locked FYs so the
+      // "Delete All for FY" feature works while preserving the lock doc.
+      allow delete: if request.auth != null && userRole() == 'write';
     }
 
     // Deny everything else
@@ -24,3 +51,4 @@ service cloud.firestore {
     }
   }
 }
+

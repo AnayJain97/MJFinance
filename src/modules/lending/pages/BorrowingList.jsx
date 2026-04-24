@@ -12,6 +12,7 @@ import FYAccordion from '../components/FYAccordion';
 import Tooltip from '../../../components/Tooltip';
 import Toast from '../../../components/Toast';
 import RapidEntry from '../components/RapidEntry';
+import ErrorBanner from '../../../components/ErrorBanner';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function BorrowingList() {
@@ -22,12 +23,12 @@ export default function BorrowingList() {
   const [quickEntryOpen, setQuickEntryOpen] = useState(false);
   const { selectedOrg, canWrite } = useOrg();
 
-  const { data: allBorrowings, loading } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
-  const { data: allLoans, loading: loadingLoans } = useCollection(getOrgCollection(selectedOrg, 'loans'));
-  const { isLocked } = useLocks(selectedOrg);
+  const { data: allBorrowings, loading, error: borrowingsError } = useCollection(getOrgCollection(selectedOrg, 'borrowings'));
+  const { data: allLoans, loading: loadingLoans, error: loansError } = useCollection(getOrgCollection(selectedOrg, 'loans'));
+  const { isLocked, locks } = useLocks(selectedOrg);
 
   // Auto-create/update carry-forward entries (ensures they exist even if Loans page hasn't been visited)
-  useCarryForward(selectedOrg, allLoans, allBorrowings, canWrite && !loading && !loadingLoans);
+  useCarryForward(selectedOrg, allLoans, allBorrowings, canWrite && !loading && !loadingLoans, locks);
 
   const filtered = useMemo(() => {
     let items = allBorrowings;
@@ -61,7 +62,8 @@ export default function BorrowingList() {
     return combined;
   }, [filtered, summaries, sortCol, sortDir]);
 
-  // Group sorted data by FY for accordion display
+  // Group sorted data by FY for accordion display.
+  // Always include locked FYs even if data was deleted post-lock so the section stays visible.
   const fyGroupedData = useMemo(() => {
     const grouped = {};
     sortedData.forEach(item => {
@@ -69,10 +71,13 @@ export default function BorrowingList() {
       if (!grouped[fy]) grouped[fy] = [];
       grouped[fy].push(item);
     });
+    Object.entries(locks).forEach(([fy, lock]) => {
+      if (lock?.isLocked && !grouped[fy]) grouped[fy] = [];
+    });
     const sorted = {};
     Object.keys(grouped).sort((a, b) => b.localeCompare(a)).forEach(k => { sorted[k] = grouped[k]; });
     return sorted;
-  }, [sortedData]);
+  }, [sortedData, locks]);
 
   // Totals for current FY. Excludes Firestore CF entries to avoid double-count;
   // adds an in-memory carry-forward so read-only orgs (no CF docs) still show correct totals.
@@ -84,7 +89,7 @@ export default function BorrowingList() {
     );
     const fyBorrowings = fyItems.map(d => d.borrowing);
     const fySummaries = fyItems.map(d => d.summary);
-    const cf = getCurrentCarryForward(allLoans, allBorrowings);
+    const cf = getCurrentCarryForward(allLoans, allBorrowings, locks);
     const cfApplies = cf.side === 'borrowing' && cf.amount > 0;
     return {
       count: fyBorrowings.length + (cfApplies ? 1 : 0),
@@ -92,7 +97,7 @@ export default function BorrowingList() {
       totalInterest: fySummaries.reduce((s, v) => s + v.interestTillFYEnd, 0) + (cfApplies ? cf.interest : 0),
       totalCredit: fySummaries.reduce((s, v) => s + v.totalCredit, 0) + (cfApplies ? cf.amount + cf.interest : 0),
     };
-  }, [sortedData, allLoans, allBorrowings]);
+  }, [sortedData, allLoans, allBorrowings, locks]);
 
   const handleSort = (col) => {
     if (sortCol === col) {
@@ -129,7 +134,12 @@ export default function BorrowingList() {
       { header: 'Rate/Mo', key: 'rate', width: 10, noTotal: true },
     ];
 
-    exportToExcel(rows, cols, `Borrowings FY ${fyLabel}`, `${selectedOrg}_Borrowings_${fyLabel}`);
+    try {
+      exportToExcel(rows, cols, `Borrowings FY ${fyLabel}`, `${selectedOrg}_Borrowings_${fyLabel}`);
+    } catch (err) {
+      console.error('Borrowing export failed:', err);
+      setToast({ message: `Export failed: ${err?.message || 'unknown error'}`, type: 'error' });
+    }
   };
 
   if (loading) {
@@ -139,6 +149,11 @@ export default function BorrowingList() {
   return (
     <div>
       <LendingTabs />
+
+      <ErrorBanner
+        message={borrowingsError ? `Failed to load borrowing data: ${borrowingsError.message || 'permission denied or network error'}` : (loansError ? `Failed to load lending data: ${loansError.message || 'permission denied or network error'}` : null)}
+        onRetry={() => window.location.reload()}
+      />
 
       <div className="page-header">
         <h1>Money Received — FY {getCurrentFYLabel()}</h1>
@@ -193,15 +208,25 @@ export default function BorrowingList() {
           emptyMessage="No borrowings found."
           isFYLocked={isLocked}
           renderHeaderActions={(fy, items) => (
-            <button
-              className="btn btn-sm btn-export"
-              onClick={() => handleExport(fy, items)}
-              title={`Export FY ${fy}`}
-            >
-              📥 Export
-            </button>
+            // Hide Export entirely for locked + emptied FYs (post Delete-All) —
+            // there's nothing to export and the section just shows the archived placeholder.
+            isLocked(fy) && items.length === 0 ? null : (
+              <button
+                className="btn btn-sm btn-export"
+                onClick={() => handleExport(fy, items)}
+                disabled={items.length === 0}
+                title={items.length === 0 ? 'No data to export' : `Export FY ${fy}`}
+              >
+                📥 Export
+              </button>
+            )
           )}
           renderSection={(fy, items) => (
+            items.length === 0 ? (
+              <div className="locked-empty-row">
+                Transactions for FY {fy} have been finalized, locked, and archived. No entries to display.
+              </div>
+            ) : (
             <div className="table-wrap">
               <table>
                 <thead>
@@ -238,6 +263,7 @@ export default function BorrowingList() {
                 </tbody>
               </table>
             </div>
+            )
           )}
         />
       )}

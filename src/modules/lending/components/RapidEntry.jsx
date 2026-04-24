@@ -4,6 +4,7 @@ import { useLocks } from '../../../hooks/useLocks';
 import { fromInputDate, toInputDate, getFYEndDate, getCurrentFYLabel } from '../../../utils/dateUtils';
 import { formatCurrency } from '../../../utils/formatUtils';
 import Toast from '../../../components/Toast';
+import InfoDialog from '../../../components/InfoDialog';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 /**
@@ -45,6 +46,7 @@ export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
   const [sessionCount, setSessionCount] = useState(0);
   const [lastAdded, setLastAdded] = useState(null); // { id, name, amount }
   const [toast, setToast] = useState(null);
+  const [blockedInfo, setBlockedInfo] = useState(null);
 
   const nameRef = useRef(null);
 
@@ -78,18 +80,18 @@ export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
     }
     const amt = Number(amount);
     const rate = Number(defaults.monthlyInterestRate);
-    if (amt <= 0) {
-      setToast({ message: 'Amount must be positive', type: 'error' });
+    if (!Number.isFinite(amt) || amt <= 0) {
+      setToast({ message: 'Amount must be a positive number', type: 'error' });
       return;
     }
-    if (rate < 0 || rate > 100) {
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
       setToast({ message: 'Invalid interest rate', type: 'error' });
       return;
     }
 
     const targetFY = getCurrentFYLabel(fromInputDate(startDate));
     if (isAddBlockedForFY(targetFY)) {
-      setToast({ message: `Cannot add: FY ${targetFY} is locked. Date must be after FY ${maxLockedFY}.`, type: 'error' });
+      setBlockedInfo({ fy: targetFY });
       return;
     }
 
@@ -100,6 +102,8 @@ export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
         monthlyInterestRate: rate,
         endDate: defaults.endDate ? fromInputDate(defaults.endDate) : null,
         notes: defaults.notes.trim(),
+        // Persist FY label so Firestore rules can enforce per-FY locks server-side.
+        fyLabel: targetFY,
       };
 
       if (isLending) {
@@ -120,8 +124,8 @@ export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
       setAmount('');
       nameRef.current?.focus();
     } catch (err) {
-      console.error(err);
-      setToast({ message: 'Error saving record', type: 'error' });
+      console.error('RapidEntry save error:', err);
+      setToast({ message: `Error saving: ${err?.message || 'unknown error'}`, type: 'error' });
     } finally {
       setSaving(false);
     }
@@ -136,7 +140,8 @@ export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
       setToast({ message: `Undid entry for ${lastAdded.name}`, type: 'success' });
       setLastAdded(null);
     } catch (err) {
-      setToast({ message: 'Error undoing entry', type: 'error' });
+      console.error('RapidEntry undo error:', err);
+      setToast({ message: `Error undoing entry: ${err?.message || 'unknown error'}`, type: 'error' });
     }
   };
 
@@ -262,6 +267,13 @@ export default function RapidEntry({ type, allLoans = [], open, onToggle }) {
       </div>
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      <InfoDialog
+        open={Boolean(blockedInfo)}
+        title={`FY ${blockedInfo?.fy} is finalized`}
+        description={`This financial year has been computed, locked${blockedInfo && blockedInfo.fy < (maxLockedFY || '') ? ' (or a later FY is locked)' : ''}, and may have its data archived. New entries dated in FY ${blockedInfo?.fy} or any earlier FY are not allowed. Choose a date after FY ${maxLockedFY} to continue.`}
+        onClose={() => setBlockedInfo(null)}
+      />
     </div>
   );
 }

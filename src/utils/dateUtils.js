@@ -14,10 +14,14 @@ export function getFYEndDate(date = new Date()) {
 }
 
 /**
- * Get current financial year label, e.g. "2025-26"
+ * Get current financial year label, e.g. "2025-26".
+ * Returns null when given a null/invalid date so callers can detect and
+ * skip rather than silently bucketing missing-date entries into "today".
  */
 export function getCurrentFYLabel(date = new Date()) {
+  if (date == null) return null;
   const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
   const month = d.getMonth();
   const year = d.getFullYear();
   const startYear = month >= 3 ? year : year - 1;
@@ -38,11 +42,28 @@ export function formatDate(date) {
 
 /**
  * Convert any date value (Firestore Timestamp, string, Date) to a JS Date.
+ * Returns null for null/undefined input and for values that don't parse
+ * to a valid Date — callers should treat null as "missing date" rather
+ * than silently substituting today's date (which would put the entry into
+ * the wrong FY and corrupt summaries).
  */
 export function toJSDate(date) {
-  if (!date) return new Date();
-  if (date.toDate) return date.toDate(); // Firestore Timestamp
-  return new Date(date);
+  if (date == null) return null;
+  let result;
+  if (typeof date.toDate === 'function') {
+    try {
+      result = date.toDate(); // Firestore Timestamp
+    } catch {
+      result = null;
+    }
+  } else {
+    result = new Date(date);
+  }
+  if (!result || Number.isNaN(result.getTime())) {
+    console.warn('toJSDate: invalid date input, returning null:', date);
+    return null;
+  }
+  return result;
 }
 
 /**

@@ -32,7 +32,8 @@ export default function LoanDetail() {
       setToast({ message: 'Loan deleted', type: 'success' });
       setTimeout(() => navigate('/money-lending/lending'), 500);
     } catch (err) {
-      setToast({ message: 'Error deleting loan', type: 'error' });
+      console.error('LoanDetail delete error:', err);
+      setToast({ message: `Error deleting loan: ${err?.message || 'unknown error'}`, type: 'error' });
     }
   };
 

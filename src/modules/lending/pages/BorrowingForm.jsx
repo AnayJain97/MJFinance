@@ -4,6 +4,7 @@ import { useCollection, useDocument, addDocument, updateDocument } from '../../.
 import { useLocks } from '../../../hooks/useLocks';
 import { fromInputDate, toInputDate, getFYEndDate, getCurrentFYLabel } from '../../../utils/dateUtils';
 import Toast from '../../../components/Toast';
+import InfoDialog from '../../../components/InfoDialog';
 import { useOrg, getOrgCollection } from '../../../context/OrgContext';
 
 export default function BorrowingForm() {
@@ -12,6 +13,7 @@ export default function BorrowingForm() {
   const isEdit = Boolean(id);
   const { selectedOrg, canWrite } = useOrg();
   const { isAddBlockedForFY, maxLockedFY } = useLocks(selectedOrg);
+  const [blockedInfo, setBlockedInfo] = useState(null);
 
   useEffect(() => { if (!canWrite) navigate('/money-lending/borrowing', { replace: true }); }, [canWrite, navigate]);
 
@@ -100,7 +102,7 @@ export default function BorrowingForm() {
     }
     const amount = Number(form.amount);
     const rate = Number(form.monthlyInterestRate);
-    if (amount <= 0 || rate < 0 || rate > 100) {
+    if (!Number.isFinite(amount) || !Number.isFinite(rate) || amount <= 0 || rate < 0 || rate > 100) {
       setToast({ message: 'Please enter valid amounts', type: 'error' });
       return;
     }
@@ -112,7 +114,7 @@ export default function BorrowingForm() {
     // Block if target FY is locked (or any FY before is locked)
     const targetFY = getCurrentFYLabel(fromInputDate(form.borrowDate));
     if (isAddBlockedForFY(targetFY)) {
-      setToast({ message: `Cannot save: FY ${targetFY} is locked (or a later FY is locked). Date must be after FY ${maxLockedFY}.`, type: 'error' });
+      setBlockedInfo({ fy: targetFY });
       return;
     }
 
@@ -125,6 +127,8 @@ export default function BorrowingForm() {
         borrowDate: fromInputDate(form.borrowDate),
         endDate: form.endDate ? fromInputDate(form.endDate) : null,
         notes: form.notes.trim(),
+        // Persist FY label so Firestore rules can enforce per-FY locks server-side.
+        fyLabel: targetFY,
       };
 
       if (isEdit) {
@@ -137,8 +141,8 @@ export default function BorrowingForm() {
         setTimeout(() => navigate(`/money-lending/borrowing/${docRef.id}`), 500);
       }
     } catch (err) {
-      console.error(err);
-      setToast({ message: 'Error saving. Please try again.', type: 'error' });
+      console.error('BorrowingForm save error:', err);
+      setToast({ message: `Error saving: ${err?.message || 'unknown error'}`, type: 'error' });
     } finally {
       setSubmitting(false);
     }
@@ -263,6 +267,13 @@ export default function BorrowingForm() {
       </div>
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+
+      <InfoDialog
+        open={Boolean(blockedInfo)}
+        title={`FY ${blockedInfo?.fy} is finalized`}
+        description={`This financial year has been computed, locked${blockedInfo && blockedInfo.fy < (maxLockedFY || '') ? ' (or a later FY is locked)' : ''}, and may have its data archived. New entries dated in FY ${blockedInfo?.fy} or any earlier FY are not allowed. Choose a date after FY ${maxLockedFY} to continue.`}
+        onClose={() => setBlockedInfo(null)}
+      />
     </div>
   );
 }

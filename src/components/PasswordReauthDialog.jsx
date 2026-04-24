@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { reauthenticateCurrentUser } from '../services/lockService';
 
 /**
@@ -27,6 +27,17 @@ export default function PasswordReauthDialog({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Track mount status so we don't call setState after the parent unmounts the
+  // dialog inside onConfirm (e.g. by clearing the pendingAction synchronously).
+  // IMPORTANT: set the ref true on every (re)mount — React 18 StrictMode runs
+  // the cleanup once between the dev double-invoke, which would otherwise leave
+  // the ref stuck at false and freeze the dialog (busy never clears).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
   if (!open) return null;
 
   const handleClose = () => {
@@ -47,8 +58,9 @@ export default function PasswordReauthDialog({
     try {
       await reauthenticateCurrentUser(password);
       await onConfirm();
-      setPassword('');
+      if (mountedRef.current) setPassword('');
     } catch (err) {
+      if (!mountedRef.current) return;
       const code = err?.code || '';
       if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') {
         setError('Incorrect password');
@@ -58,7 +70,7 @@ export default function PasswordReauthDialog({
         setError(err?.message || 'Authentication failed');
       }
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
     }
   };
 

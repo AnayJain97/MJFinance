@@ -31,14 +31,20 @@ export async function reauthenticateCurrentUser(password) {
 
 /**
  * Lock a FY. Caller is expected to have already re-authenticated.
+ *
+ * @param frozenCF Optional { side: 'lending'|'borrowing'|null, amount: number }
+ *                 captured from the live carry-forward plan at the moment of locking.
+ *                 Stored on the lock doc so the cascade survives data deletion.
  */
-export async function lockFY(orgId, fyLabel) {
+export async function lockFY(orgId, fyLabel, frozenCF = null) {
   const user = auth.currentUser;
   await setDoc(doc(db, lockDocPath(orgId, fyLabel)), {
     fyLabel,
     isLocked: true,
     lockedAt: serverTimestamp(),
     lockedBy: user?.email || '',
+    cfSide: frozenCF?.side || null,
+    cfAmount: frozenCF?.amount ?? 0,
     // createdAt is required for useCollection's orderBy('createdAt') query to surface this doc
     createdAt: serverTimestamp(),
   }, { merge: true });
@@ -53,6 +59,8 @@ export async function unlockFY(orgId, fyLabel) {
     isLocked: false,
     lockedAt: deleteField(),
     lockedBy: deleteField(),
+    cfSide: deleteField(),
+    cfAmount: deleteField(),
     createdAt: serverTimestamp(),
   }, { merge: true });
 }

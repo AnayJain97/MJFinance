@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 export default function Tooltip({ text, children }) {
   const [visible, setVisible] = useState(false);
@@ -27,6 +28,10 @@ export default function Tooltip({ text, children }) {
   }, []);
 
   const hide = useCallback(() => setVisible(false), []);
+  const toggle = useCallback(() => {
+    if (visible) hide();
+    else show();
+  }, [visible, show, hide]);
 
   return (
     <span
@@ -34,12 +39,17 @@ export default function Tooltip({ text, children }) {
       className="info-icon"
       onMouseEnter={show}
       onMouseLeave={hide}
+      onClick={(e) => { e.stopPropagation(); toggle(); }}
     >
       {children || 'ⓘ'}
-      {visible && (
+      {visible && createPortal(
+        // Portal to document.body so the fixed-positioned tooltip isn't trapped
+        // inside ancestors with `transform` / `contain: paint` / `overflow: hidden`
+        // (e.g. .fy-section) which would otherwise clip it out of view.
         <div className="tooltip-box" style={{ top: pos.top, left: pos.left }}>
           {text}
-        </div>
+        </div>,
+        document.body
       )}
     </span>
   );

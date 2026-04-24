@@ -32,7 +32,8 @@ export default function BorrowingDetail() {
       setToast({ message: 'Borrowing deleted', type: 'success' });
       setTimeout(() => navigate('/money-lending/borrowing'), 500);
     } catch (err) {
-      setToast({ message: 'Error deleting borrowing', type: 'error' });
+      console.error('BorrowingDetail delete error:', err);
+      setToast({ message: `Error deleting borrowing: ${err?.message || 'unknown error'}`, type: 'error' });
     }
   };
 
