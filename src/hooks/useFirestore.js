@@ -14,14 +14,20 @@ export function useCollection(collectionPath) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  useEffect(() => {
-    if (!collectionPath) { setLoading(false); return; }
-
-    // Reset state when path changes (e.g. org switch) so we don't render stale data
+  // Track the path the current `data` belongs to. When the caller passes a new
+  // path (e.g. org switch), we MUST reset state during render — not in the
+  // effect — otherwise the next render still returns the previous org's docs
+  // bound to the new org's identity, causing stale CF rows / cross-org flashes.
+  const [boundPath, setBoundPath] = useState(collectionPath);
+  if (boundPath !== collectionPath) {
+    setBoundPath(collectionPath);
     setData([]);
     setLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    if (!collectionPath) { setLoading(false); return; }
 
     let unsubFirestore = null;
 
@@ -80,14 +86,18 @@ export function useDocument(docPath) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  useEffect(() => {
-    if (!docPath) { setLoading(false); return; }
-
-    // Reset state when path changes so we don't render stale data
+  // Same render-time reset as useCollection: prevents stale doc flashes when
+  // the path changes (org/route switch).
+  const [boundPath, setBoundPath] = useState(docPath);
+  if (boundPath !== docPath) {
+    setBoundPath(docPath);
     setData(null);
     setLoading(true);
     setError(null);
+  }
+
+  useEffect(() => {
+    if (!docPath) { setLoading(false); return; }
 
     let unsubFirestore = null;
 

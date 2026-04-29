@@ -235,44 +235,63 @@ export function computeCarryForwardPlan(loans, borrowings, locks = {}) {
     let absAmount;
     let isLending;
 
-    if (lock?.isLocked) {
-      // For locked FYs always use the frozen state — never fall back to data
-      // (which may have been deleted post-lock and would otherwise produce
-      // incorrect zeros). Defensively handle every malformed lock-doc shape.
-      const rawAmount = Number(lock.cfAmount);
-      if (lock.cfAmount == null || !Number.isFinite(rawAmount)) {
-        // No / invalid amount → treat as zero net for this FY.
-        if (lock.cfAmount != null) {
-          console.error(`computeCarryForwardPlan: lock for FY ${sourceFY} has non-numeric cfAmount`, lock);
-        }
-        pendingNet = 0;
-        continue;
-      }
-      const rawAbs = Math.abs(rawAmount);
-      if (rawAbs < 0.01) {
-        // Frozen zero net — no CF needed for this FY.
-        pendingNet = 0;
-        continue;
-      }
-      if (lock.cfSide !== 'lending' && lock.cfSide !== 'borrowing') {
-        // Have an amount but no/invalid side — corrupt lock doc. Skip safely
-        // rather than guessing a side and writing wrong data downstream.
-        console.error(`computeCarryForwardPlan: lock for FY ${sourceFY} has cfAmount but missing/invalid cfSide`, lock);
-        pendingNet = 0;
-        continue;
-      }
-      absAmount = Math.round(rawAbs * 100) / 100;
-      isLending = lock.cfSide === 'lending';
-    } else {
-      // Compute from raw data
+    // Recompute from raw data (used both for unlocked FYs and as a fallback
+    // for locked FYs whose lock doc is missing the frozen cfAmount/cfSide —
+    // typically older locks created before those fields existed).
+    const computeFromData = () => {
       const { totalLendingDue, totalBorrowingCredit } = calculateFYTotals(loans, borrowings, sourceFY);
       const net = (totalLendingDue - totalBorrowingCredit) + pendingNet;
-      if (Math.abs(net) < 0.01) {
+      if (Math.abs(net) < 0.01) return { absAmount: 0, isLending: false, isZero: true };
+      return {
+        absAmount: Math.round(Math.abs(net) * 100) / 100,
+        isLending: net > 0,
+        isZero: false,
+      };
+    };
+
+    if (lock?.isLocked) {
+      // For locked FYs prefer the frozen state. Defensively handle every
+      // malformed shape — but DO NOT silently drop a locked FY when frozen
+      // metadata is missing. Falling back to recomputed data preserves the
+      // cascade (older locks pre-date the cfAmount/cfSide fields), and a
+      // missing-data scenario at least keeps pendingNet intact instead of
+      // wiping it (which previously caused downstream CF docs to be deleted).
+      const rawAmount = Number(lock.cfAmount);
+      const hasValidAmount = lock.cfAmount != null && Number.isFinite(rawAmount);
+      const hasValidSide = lock.cfSide === 'lending' || lock.cfSide === 'borrowing';
+
+      if (hasValidAmount && hasValidSide) {
+        const rawAbs = Math.abs(rawAmount);
+        if (rawAbs < 0.01) {
+          // Frozen zero net — no CF needed for this FY.
+          pendingNet = 0;
+          continue;
+        }
+        absAmount = Math.round(rawAbs * 100) / 100;
+        isLending = lock.cfSide === 'lending';
+      } else {
+        // Missing or invalid frozen metadata. Fall back to data.
+        console.warn(
+          `computeCarryForwardPlan: lock for FY ${sourceFY} missing/invalid cfAmount or cfSide; falling back to data`,
+          { cfAmount: lock.cfAmount, cfSide: lock.cfSide }
+        );
+        const fromData = computeFromData();
+        if (fromData.isZero) {
+          pendingNet = 0;
+          continue;
+        }
+        absAmount = fromData.absAmount;
+        isLending = fromData.isLending;
+      }
+    } else {
+      // Compute from raw data
+      const fromData = computeFromData();
+      if (fromData.isZero) {
         pendingNet = 0;
         continue;
       }
-      isLending = net > 0;
-      absAmount = Math.round(Math.abs(net) * 100) / 100;
+      absAmount = fromData.absAmount;
+      isLending = fromData.isLending;
     }
 
     plan.push({ sourceFY, side: isLending ? 'lending' : 'borrowing', amount: absAmount });

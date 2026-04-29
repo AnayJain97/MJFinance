@@ -125,9 +125,23 @@ export function useCarryForward(orgId, loans, borrowings, canWrite, locks = {}) 
         //    on the target side before we setDoc), and any CFs not in the plan.
         //    Note: do NOT skip locked source FYs — the plan already reflects the
         //    frozen value for locked FYs (via locks[].cfAmount/cfSide).
+        //    SAFETY NET: never delete a CF whose source FY is locked. If the
+        //    plan omitted that source (e.g. corrupt lock metadata or a missing
+        //    field), deleting the historical CF would silently lose money on
+        //    the books with no recovery path. Better to keep the stale CF
+        //    until the lock metadata is repaired.
         for (const [sourceFY, existing] of [...existingBySource.entries()]) {
           if (!stillCurrent()) return;
           const desired = planBySource.get(sourceFY);
+          const sourceLock = locks[sourceFY];
+          const sourceIsLocked = !!sourceLock?.isLocked;
+          if (!desired && sourceIsLocked) {
+            console.warn(
+              `useCarryForward: preserving CF for locked source FY ${sourceFY} (no plan entry); check lock metadata`,
+              { lock: sourceLock, existing }
+            );
+            continue;
+          }
           if (!desired || desired.side !== existing.side) {
             try {
               await deleteDoc(doc(db, existing.path, existing.id));
